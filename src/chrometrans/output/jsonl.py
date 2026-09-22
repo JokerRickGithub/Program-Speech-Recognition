@@ -2,11 +2,14 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from datetime import datetime
 from pathlib import Path
 
 from chrometrans.models import Cue
+
+logger = logging.getLogger(__name__)
 
 
 def session_dir(root: Path, when: datetime) -> Path:
@@ -40,8 +43,15 @@ class JsonlWriter:
         with open(self._path, "r", encoding="utf-8") as fh:
             for line in fh:
                 line = line.strip()
-                if line:
+                if not line:
+                    continue
+                try:
                     cues.append(Cue.from_dict(json.loads(line)))
+                except (ValueError, TypeError):
+                    # 崩溃可能把最后一行撕成半行（JSONDecodeError 是 ValueError 的子类），
+                    # 字段残缺则抛 TypeError。跳过它并留痕 —— 一条坏行不能让整份权威记录失效。
+                    logger.warning("跳过无法解析的 JSONL 行：%r", line[:80])
+                    continue
         return cues
 
     def close(self) -> None:

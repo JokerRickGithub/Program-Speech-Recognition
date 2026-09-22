@@ -56,3 +56,18 @@ def test_unicode_is_not_escaped(tmp_path):
     w.append(_cue(1))
     w.close()
     assert "第 1 行" in path.read_text(encoding="utf-8")
+
+
+def test_read_all_skips_torn_last_line(tmp_path):
+    """断电可能把最后一行撕成半行；一条坏行不能让整份权威记录读不出来。"""
+    path = tmp_path / "captions.jsonl"
+    w = JsonlWriter(path)
+    w.open()
+    w.append(_cue(1))
+    w.append(_cue(2))
+    w.close()
+
+    with open(path, "a", encoding="utf-8") as fh:
+        fh.write('{"id": 3, "start": 3.0, "end": 4.0, "sou')   # 撕裂的半行
+
+    assert [c.id for c in JsonlWriter(path).read_all()] == [1, 2]
