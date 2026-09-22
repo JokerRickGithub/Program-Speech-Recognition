@@ -94,3 +94,71 @@ def test_find_target_pid_raises_when_nothing_playing(monkeypatch):
         classmethod(lambda cls, dll_path=None: []))
     with pytest.raises(CaptureError, match="没有进程在渲染音频"):
         cap.find_target_pid(("chrome.exe",))
+
+
+def _make_stereo_interleaved(n_frames=48000) -> bytes:
+    """构造左右声道取值不同且随时间变化的交错 float32 缓冲。
+
+    左右用不同的时变信号，这样一旦跨块边界发生声道错位/丢样本，
+    降混结果就会变，从而被 allclose 抓住（常量值会把错位掩盖成同一个均值）。
+    """
+    t = np.arange(n_frames, dtype=np.float32)
+    left = np.sin(t * 0.1).astype(np.float32)
+    right = np.cos(t * 0.1).astype(np.float32)
+    interleaved = np.empty(n_frames * 2, dtype=np.float32)
+    interleaved[0::2] = left
+    interleaved[1::2] = right
+    return interleaved.tobytes()
+
+
+def test_pcm_converter_preserves_mid_frame_split():
+    fmt = AudioFormat(channels=2, sample_rate=48000, bits=32)
+    raw = _make_stereo_interleaved()
+
+    whole = PcmConverter(fmt, target_rate=16000).convert(raw)
+
+    conv = PcmConverter(fmt, target_rate=16000)
+    # 12 字节 = 3 个 float32 样本，落在某一帧内部（跨帧边界切分）
+    parts = np.concatenate([conv.convert(raw[:12]), conv.convert(raw[12:])])
+
+    assert len(parts) == len(whole)
+    assert np.allclose(parts, whole, atol=1e-6)
+
+
+def test_pcm_converter_preserves_sub_sample_split():
+    fmt = AudioFormat(channels=2, sample_rate=48000, bits=32)
+    raw = _make_stereo_interleaved()
+
+    whole = PcmConverter(fmt, target_rate=16000).convert(raw)
+
+    conv = PcmConverter(fmt, target_rate=16000)
+    # 14 字节不是 4 的倍数（半个样本），修复前 frombuffer 会直接 ValueError
+    parts = np.concatenate([conv.convert(raw[:14]), conv.convert(raw[14:])])
+
+    assert len(parts) == len(whole)
+    assert np.allclose(parts, whole, atol=1e-6)
+
+
+def test_invalid_pipe_name_rejected():
+    import chrometrans.audio.capture as cap
+
+    # 非 \\.\pipe\... 形式的名称会让 CreateNamedPipeW 返回 INVALID_HANDLE_VALUE
+    stream = cap.ProcessAudioStream(pid=12345, pipe_name="not a pipe name")
+    with pytest.raises(CaptureError):
+        stream.start()
+    assert stream.is_started is False
+
+
+def test_constructor_failure_leaves_clean_stream(monkeypatch):
+    import chrometrans.audio.capture as cap
+
+    class _Boom:
+        def __init__(self, *args, **kwargs):
+            raise RuntimeError("boom")
+
+    monkeypatch.setattr(cap, "ProcessAudioCapture", _Boom)
+    stream = cap.ProcessAudioStream(
+        pid=12345, pipe_name=r"\\.\pipe\chrometrans_boom")
+    with pytest.raises(CaptureError):
+        stream.start()
+    assert stream.is_started is False

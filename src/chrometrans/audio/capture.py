@@ -92,16 +92,23 @@ class PcmConverter:
             raise CaptureError(
                 f"预期 float32（{EXPECTED_BITS} bit），实际 {fmt.bits} bit")
         self._channels = fmt.channels
+        # 跨块原始字节余量（未成帧/未成样本的尾部，见 convert()）。
+        # 注意与 ProcessAudioStream._pending（WAV 头缓冲）同名但职责不同。
+        self._pending = b""
         self._resampler = soxr.ResampleStream(
             fmt.sample_rate, target_rate, 1, dtype="float32")
 
     def convert(self, data: bytes) -> np.ndarray:
-        samples = np.frombuffer(data, dtype=np.float32)
+        buf = self._pending + data
+        n_samples = len(buf) // 4              # sizeof(float32)
+        usable = n_samples * 4
+        samples = np.frombuffer(buf[:usable], dtype=np.float32)
         frames = len(samples) // self._channels
+        # 未成帧/未成样本的尾部留到下一块（byte-mode 管道读数是任意字节数）
+        self._pending = buf[frames * self._channels * 4:]
         if frames == 0:
             return np.zeros(0, dtype=np.float32)
-        usable = samples[:frames * self._channels]
-        mono = usable.reshape(frames, self._channels).mean(axis=1)
+        mono = samples[:frames * self._channels].reshape(frames, self._channels).mean(axis=1)
         return self._resampler.resample_chunk(mono)
 
 
@@ -180,15 +187,18 @@ class ProcessAudioStream:
                 f"CreateNamedPipeW 失败：{ctypes.get_last_error()}")
         self._handle = handle
 
-        # 必须先挂起一个 ConnectNamedPipe，DLL 才连得上（spec §5.1）
-        threading.Thread(
-            target=_k32.ConnectNamedPipe,
-            args=(wintypes.HANDLE(handle), None),
-            daemon=True,
-        ).start()
-
-        self._cap = ProcessAudioCapture(pid=self._pid, output_path=self._pipe_name)
         try:
+            # 先构造（构造不触碰管道），再挂起 ConnectNamedPipe。若构造抛异常，
+            # 此时尚无挂起的 ConnectNamedPipe，stop() 的 CloseHandle 不会卡死。
+            self._cap = ProcessAudioCapture(pid=self._pid, output_path=self._pipe_name)
+
+            # 必须先挂起一个 ConnectNamedPipe，DLL 才连得上（spec §5.1）
+            threading.Thread(
+                target=_k32.ConnectNamedPipe,
+                args=(wintypes.HANDLE(handle), None),
+                daemon=True,
+            ).start()
+
             self._cap.start()
         except Exception as exc:
             self.stop()
