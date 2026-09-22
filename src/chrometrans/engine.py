@@ -79,7 +79,11 @@ class Engine:
                 self._emit({"event": "cue", "data": cue.to_dict()})
                 self._rerender_if_due(session, writer, cue_id)
         finally:
-            writer.close()
+            try:
+                writer.close()
+            except Exception as exc:
+                self._emit({"event": "error", "data": {
+                    "message": f"字幕文件收尾失败（JSONL 可能缺最后几行）：{exc}"}})
             # 收尾必须再渲一次：否则不足 srt_rerender_every 条的短会话
             # （上一节课只录到几十句）根本不会产生 SRT 文件
             self._render_srt(session, writer)

@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import os
 import site
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -88,7 +87,7 @@ class WhisperEngine:
         for seg in whisper_segments:
             if is_hallucination(seg.no_speech_prob, seg.avg_logprob,
                                 seg.compression_ratio, self._cfg):
-                continue                              # C6：单段失败不中断整段
+                continue                              # C12：跳过幻觉段，不中断整段
             text = seg.text.strip()
             if not text:
                 continue

@@ -1,7 +1,5 @@
 import os
 
-import pytest
-
 from chrometrans.models import Cue
 from chrometrans.output.srt import atomic_write, format_timestamp, render
 

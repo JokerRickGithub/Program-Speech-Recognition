@@ -21,3 +21,4 @@ models/
 # Captured transcripts / audio
 transcripts/
 recordings/
+captions.next.srt

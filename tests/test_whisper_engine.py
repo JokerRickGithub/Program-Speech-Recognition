@@ -106,3 +106,27 @@ def test_transcribe_returns_none_on_empty_text(monkeypatch):
     engine = WhisperEngine(AsrConfig())
     monkeypatch.setattr(engine, "_model", FakeModel())
     assert engine.transcribe(_seg()) is None
+
+
+def test_transcribe_keeps_good_segments_when_some_are_hallucinated(monkeypatch):
+    """C12：幻觉段跳过，好段保留 —— 不是全有全无。"""
+    class FakeModel:
+        def transcribe(self, audio, **kwargs):
+            segs = [
+                SimpleNamespace(start=0.0, end=1.0, text="good line",
+                                no_speech_prob=0.1, avg_logprob=-0.2,
+                                compression_ratio=1.2, words=[]),
+                SimpleNamespace(start=1.0, end=2.0, text="反复反复反复",
+                                no_speech_prob=0.1, avg_logprob=-0.2,
+                                compression_ratio=3.0, words=[]),
+            ]
+            info = SimpleNamespace(language="en", language_probability=0.99)
+            return iter(segs), info
+
+    engine = WhisperEngine(AsrConfig())
+    monkeypatch.setattr(engine, "_model", FakeModel())
+
+    utt = engine.transcribe(_seg(start=3.0))
+    assert utt is not None
+    assert utt.text == "good line"
+    assert "反复" not in utt.text

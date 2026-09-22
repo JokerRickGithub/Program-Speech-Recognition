@@ -17,11 +17,16 @@ class EventBus:
     def __init__(self, backlog: int = 50) -> None:
         self._backlog: collections.deque[dict] = collections.deque(maxlen=backlog)
         self._queues: list[asyncio.Queue] = []
+        self._last_status: dict | None = None
 
     def subscribe(self) -> asyncio.Queue:
         q: asyncio.Queue = asyncio.Queue(maxsize=1000)
         for event in self._backlog:
             q.put_nowait(event)
+        # 只补「最新一条」状态：迟到/刷新的页面需要知道当前状态，
+        # 但不需要状态历史（那才会显示成过期状态）
+        if self._last_status is not None:
+            q.put_nowait(self._last_status)
         self._queues.append(q)
         return q
 
@@ -34,6 +39,8 @@ class EventBus:
         # 显示过期的运行状态
         if event.get("event") == "cue":
             self._backlog.append(event)
+        elif event.get("event") == "status":
+            self._last_status = event
         for q in list(self._queues):
             try:
                 q.put_nowait(event)

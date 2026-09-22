@@ -65,8 +65,12 @@ def segment_source(cfg: Config, emit: Callable[[dict], None],
                 if chunk.size:
                     yield from segmenter.feed(chunk)
         finally:
-            yield from segmenter.flush()
+            # 不能在 finally 里 yield：生成器被关闭时 GeneratorExit 会撞上这里的
+            # yield → RuntimeError，且下面的 stop() 会被整个跳过。
             source.stop()
+        # 只有正常耗尽才排空尾部；Ctrl+C 提前关闭时不会走到这里，
+        # 正在说的那半句丢掉是预期行为（它本来就不完整）。
+        yield from segmenter.flush()
     return factory
 
 

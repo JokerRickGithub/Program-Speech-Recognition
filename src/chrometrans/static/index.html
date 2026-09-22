@@ -11,6 +11,7 @@
            border-bottom: 1px solid #2c3038; font-size: 13px; color: #9aa0a6; }
   #cues { padding: 16px; display: flex; flex-direction: column; gap: 14px; }
   .cue { border-left: 3px solid #3b6fd4; padding-left: 12px; }
+  #status.degraded { color: #f87171; font-weight: 600; }
   .src { font-size: 14px; color: #9aa0a6; }
   .tgt { font-size: 22px; line-height: 1.35; margin-top: 4px; }
   .tgt.missing { color: #6b7280; font-style: italic; font-size: 16px; }
@@ -55,10 +56,24 @@ function addCue(cue) {
 }
 
 function setStatus(data) {
-  if (data.state === 'running') {
-    status.textContent = `运行中 · ${data.model} · ${data.device}`;
-  } else {
-    status.textContent = '已停止';
+  switch (data.state) {
+    case 'running':
+      status.textContent = data.model
+        ? `运行中 · ${data.model} · ${data.device}`
+        : `运行中 · 按进程捕获（PID ${data.pid}）`;
+      break;
+    case 'degraded':
+      status.textContent = `⚠ ${data.message}`;
+      status.classList.add('degraded');
+      break;
+    case 'warning':
+      status.textContent = `⚠ ${data.message}`;
+      break;
+    case 'stopped':
+      status.textContent = '已停止';
+      break;
+    default:
+      status.textContent = '已连接';
   }
 }
 

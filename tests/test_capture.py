@@ -209,3 +209,23 @@ def test_close_pipe_does_not_hang_with_pending_connect():
     assert done[0] < 2.0, f"_close_pipe 阻塞了 {done[0]:.2f}s"
     t.join(timeout=2.0)
     assert not t.is_alive(), "挂起的 ConnectNamedPipe 未被取消，线程仍在阻塞"
+
+
+def test_read_raises_capture_error_on_zero_bytes(monkeypatch):
+    """稳态下读到 0 字节 = 管道对端已关闭，必须显式当 EOF，不能静默空转（spec §7）。"""
+    import chrometrans.audio.capture as cap
+
+    class FakeK32:
+        @staticmethod
+        def ReadFile(handle, buf, size, got, overlapped):
+            return True          # ReadFile 成功，但 got 保持 0
+
+    monkeypatch.setattr(cap, "_k32", FakeK32())
+
+    stream = cap.ProcessAudioStream(pid=12345)
+    stream._handle = 1                                # 非 None，让 read() 走到 ReadFile
+    stream._converter = cap.PcmConverter(cap.AudioFormat(1, 16000, 32), 16000)
+    stream._got.value = 0
+
+    with pytest.raises(cap.CaptureError, match="0 字节"):
+        stream.read()

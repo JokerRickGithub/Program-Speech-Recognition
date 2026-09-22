@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import time
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
 from typing import Callable, Iterator
 
 import numpy as np
@@ -29,6 +30,8 @@ class SystemLoopbackStream:
         self._stream = None
         self._converter: PcmConverter | None = None
         self._frames_per_buffer = 0
+        self._pool = None            # 延迟到 start() 再建，避免空对象持有线程
+        self._pending = None
 
     def start(self) -> None:
         import pyaudiowpatch as pyaudio
@@ -44,11 +47,32 @@ class SystemLoopbackStream:
         self._frames_per_buffer = 1024
         self._converter = PcmConverter(AudioFormat(channels, rate, 32),
                                        self._cfg.target_sample_rate)
+        self._pool = ThreadPoolExecutor(max_workers=1,
+                                        thread_name_prefix="loopback-read")
 
     def read(self) -> np.ndarray:
-        data = self._stream.read(self._frames_per_buffer,
-                                 exception_on_overflow=False)
-        return self._converter.convert(data)
+        if self._stream is None or self._pool is None:
+            raise CaptureError("流未启动")
+        fut = self._pending
+        if fut is not None and not fut.done():
+            # 上一次读取还卡在 PortAudio 里：不能再派一个（线程数必须界住），
+            # 直接当超时处理，让上层补静音
+            raise CaptureError("降级路径读取超时（上一次仍未返回）")
+        if fut is not None:
+            self._pending = None
+            try:
+                return self._converter.convert(fut.result())
+            except Exception as exc:
+                raise CaptureError(f"降级路径读取失败：{exc}") from exc
+        self._pending = self._pool.submit(
+            self._stream.read, self._frames_per_buffer, False)
+        try:
+            return self._converter.convert(
+                self._pending.result(timeout=self._cfg.loopback_read_timeout_s))
+        except FuturesTimeout as exc:
+            raise CaptureError("降级路径读取超时") from exc
+        except Exception as exc:
+            raise CaptureError(f"降级路径读取失败：{exc}") from exc
 
     def stop(self) -> None:
         if self._stream is not None:
@@ -64,6 +88,9 @@ class SystemLoopbackStream:
             except Exception:
                 pass
             self._pa = None
+        if self._pool is not None:
+            self._pool.shutdown(wait=False)
+            self._pool = None
 
 
 def check_signal(chunks: list[np.ndarray], min_rms: float = 1e-4) -> str:
@@ -203,12 +230,18 @@ class CaptureSource:
     # ---- 降级路径 ----
 
     def _loopback_chunks(self) -> Iterator[np.ndarray]:
+        stream = None
         try:
             stream = self._open_loopback()
             stream.start()
         except Exception as exc:
             self._emit({"event": "error", "data": {
                 "message": f"降级路径也启动失败：{exc}"}})
+            if stream is not None:
+                try:
+                    stream.stop()
+                except Exception:
+                    pass
             self._sleep(self._cfg.loopback_retry_delay_s)
             return
 

@@ -241,6 +241,10 @@ class ProcessAudioStream:
             if not data:
                 return np.zeros(0, dtype=np.float32)
 
+        if not data:
+            # 稳态下读到 0 字节 = 管道对端已关闭。convert(b"") 会安静地返回空数组，
+            # 于是上层会永远空转：既不重连、也不报错（spec §7）。必须显式当 EOF。
+            raise CaptureError("管道已关闭（读到 0 字节）")
         return self._converter.convert(data)
 
     def stop(self) -> None:

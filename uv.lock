@@ -100,7 +100,7 @@ requires-dist = [
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "numpy" },
     { name = "nvidia-cublas-cu12", specifier = ">=12.9.2.10" },
-    { name = "process-audio-capture", specifier = ">=1.0.0" },
+    { name = "process-audio-capture", specifier = "==1.0.0" },
     { name = "pyaudiowpatch", specifier = ">=0.2.12.8" },
     { name = "silero-vad", specifier = ">=6.2.1" },
     { name = "soxr" },

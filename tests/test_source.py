@@ -1,3 +1,5 @@
+from concurrent.futures import ThreadPoolExecutor
+
 import numpy as np
 import pytest
 
@@ -173,3 +175,75 @@ def test_stop_is_idempotent():
     source = _source(CaptureConfig(), [], open_process_stream=lambda pid: FakeStream())
     source.stop()
     source.stop()          # 不应抛异常
+
+
+def test_loopback_start_failure_releases_the_stream():
+    """启动失败也必须 stop()，否则每次重试泄漏一个 PortAudio 实例。"""
+    def no_process():
+        raise CaptureError("没有进程在渲染音频")
+
+    broken = FakeStream(raise_on_start="设备被占用")
+    calls = {"n": 0}
+
+    def open_loopback():
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return broken
+        return FakeStream(chunks=[np.full(512, 0.5, dtype=np.float32)])
+
+    source = _source(CaptureConfig(), [], resolve_pid=no_process,
+                     open_loopback=open_loopback,
+                     open_process_stream=lambda pid: FakeStream())
+    got = _take(source, 1)
+
+    assert calls["n"] >= 2, "启动失败后必须重试"
+    assert broken.stopped, "启动失败的那条流必须被 stop()，否则句柄泄漏"
+    assert got
+
+
+def test_pid_is_re_resolved_on_every_reconnect():
+    """Chrome 重启会换 PID —— 每次重连都必须重新解析（C26）。"""
+    calls = []
+
+    def resolve():
+        calls.append(1)
+        return 1234 if len(calls) == 1 else 5678
+
+    events = []
+    source = _source(
+        CaptureConfig(max_reconnect_attempts=5, self_check_chunks=1), events,
+        resolve_pid=resolve,
+        open_process_stream=lambda pid: FakeStream(
+            chunks=[np.full(512, 0.5, dtype=np.float32)], fail_after=2),
+        open_loopback=lambda: FakeStream(
+            chunks=[np.full(512, 0.5, dtype=np.float32)]))
+    _take(source, 3)
+
+    running = [e["data"]["pid"] for e in events
+               if e["data"].get("state") == "running"]
+    assert running == [1234, 5678], "重连后必须按新 PID 重新解析"
+
+
+def test_loopback_read_timeout_raises_so_the_caller_can_fill_silence():
+    """C1：PortAudio 永久阻塞必须有超时，把控制权拿回来才能补静音。"""
+    import threading
+    from chrometrans.audio.capture import AudioFormat, PcmConverter
+    from chrometrans.audio.source import SystemLoopbackStream
+
+    release = threading.Event()
+
+    class BlockingPortAudioStream:
+        def read(self, n, exception_on_overflow=False):
+            release.wait(5)                 # 模拟 PortAudio 永久阻塞
+            return b"\x00" * 4096
+
+    s = SystemLoopbackStream(CaptureConfig(loopback_read_timeout_s=0.05))
+    s._stream = BlockingPortAudioStream()
+    s._converter = PcmConverter(AudioFormat(2, 48000, 32), 16000)
+    s._pool = ThreadPoolExecutor(max_workers=1)     # 或调用 s.start() 的分支
+
+    try:
+        with pytest.raises(CaptureError):
+            s.read()
+    finally:
+        release.set()

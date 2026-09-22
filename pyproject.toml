@@ -5,7 +5,7 @@ description = "Chrome 网课实时字幕：按进程捕获音频 + 本地 ASR + 
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "process-audio-capture>=1.0.0",
+    "process-audio-capture==1.0.0",
     "pyaudiowpatch>=0.2.12.8",
     "soxr",
     "numpy",

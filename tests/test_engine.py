@@ -1,9 +1,6 @@
-import asyncio
 from datetime import datetime
-from pathlib import Path
 
 import numpy as np
-import pytest
 
 from chrometrans.audio.segmenter import Segment
 from chrometrans.config import Config, OutputConfig, TranslateConfig
@@ -179,3 +176,22 @@ def test_render_failure_does_not_escape(tmp_path):
     eng._render_srt(session, JsonlWriter(jsonl))     # 不得抛
 
     assert any(e["event"] == "error" for e in events)
+
+
+def test_writer_close_failure_does_not_kill_the_teardown(tmp_path, monkeypatch):
+    """close() 抛异常也必须走到 stopped（R22 的保护不能被它上一行废掉）。"""
+    from chrometrans.output.jsonl import JsonlWriter
+
+    def boom(self):
+        raise OSError("磁盘满了")
+
+    monkeypatch.setattr(JsonlWriter, "close", boom)
+
+    segs = [Segment(1, 0.0, 2.0, np.zeros(32000, dtype=np.float32))]
+    eng, events = _engine(tmp_path, StubTranslator(), segs)
+    eng.run()          # 不得抛
+
+    states = [e["data"].get("state") for e in events]
+    assert "stopped" in states, "close() 失败也必须发 stopped 事件"
+    session = next(tmp_path.iterdir())
+    assert (session / "captions.srt").exists(), "close() 失败也必须照常重渲 SRT"

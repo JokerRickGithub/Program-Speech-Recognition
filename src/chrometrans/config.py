@@ -19,6 +19,7 @@ class CaptureConfig:
     reconnect_base_delay_s: float = 1.0
     reconnect_max_delay_s: float = 30.0
     loopback_retry_delay_s: float = 5.0
+    loopback_read_timeout_s: float = 2.0   # C1：PortAudio 可能永久阻塞，必须超时
     silence_fill_samples: int = 512   # C1：底层停流时补的静音块大小
     # 启动自检（spec §9）：管道块约 10ms，200 块 ≈ 2 秒
     self_check_chunks: int = 200
