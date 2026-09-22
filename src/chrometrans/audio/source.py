@@ -79,7 +79,13 @@ class SystemLoopbackStream:
         # 成功取回后必须清掉。留着它，下一次 read() 会走进上面 fut is not None
         # 的分支，把**同一块**数据再返回一遍 —— 输出会变成 A, A, B, B…
         self._pending = None
-        return self._converter.convert(data)
+        try:
+            # 与上面那条分支同样地把转换失败归一成 CaptureError：read() 对外
+            # 只承诺抛 CaptureError，漏出 soxr/numpy 的原始异常会让调用方的
+            # 契约形同虚设
+            return self._converter.convert(data)
+        except Exception as exc:
+            raise CaptureError(f"降级路径读取失败：{exc}") from exc
 
     def stop(self) -> None:
         if self._stream is not None:

@@ -280,3 +280,27 @@ def test_loopback_read_returns_each_chunk_exactly_once():
         assert not np.array_equal(first, second), "两次读回的数据不应相同"
     finally:
         s._pool.shutdown(wait=False)
+
+
+def test_loopback_read_normalizes_converter_failure_to_capture_error():
+    """read() 对外只承诺抛 CaptureError，不能漏出 soxr/numpy 的原始异常。"""
+    from chrometrans.audio.source import SystemLoopbackStream
+
+    class ExplodingConverter:
+        def convert(self, data):
+            raise ValueError("soxr 参数不合法")
+
+    class OneChunkStream:
+        def read(self, n, exception_on_overflow=False):
+            return np.zeros(2048, dtype=np.float32).tobytes()
+
+    s = SystemLoopbackStream(CaptureConfig(loopback_read_timeout_s=5.0))
+    s._stream = OneChunkStream()
+    s._converter = ExplodingConverter()
+    s._pool = ThreadPoolExecutor(max_workers=1)
+
+    try:
+        with pytest.raises(CaptureError):
+            s.read()
+    finally:
+        s._pool.shutdown(wait=False)
