@@ -77,6 +77,7 @@ Chrome 的 Live Caption 由浏览器用本地语音识别（SODA）在**原生 U
 | C6 | **超长段的失败方式是「硬报错」，不是「静默丢数据」** ⚠️ **已修正** — 在本设计的调用方式下（原始音频 + `vad_filter=False` + 不传 `clip_timestamps`），**≥30 秒的音频块会抛 `RuntimeError('No clip timestamps found...')`**。"只转写前 30 秒"的静默截断只发生在**调用方自己传 `clip_timestamps`** 的分支 | faster-whisper `transcribe.py:438-443` + issue #1355。初版"静默丢数据"的说法**方向错误，但结论（必须限制段长）不变，且必须在送进 ASR 之前限制** |
 | C7 | **`VADIterator` 每次调用必须恰好 512 样本**（16kHz） | 其他长度抛 `ValueError`；不允许 padding / overlap |
 | C8 | **`VADIterator` 报的 end 是「晚」不是「早」** ⚠️ **已修正** — 实际公式 `temp_end + speech_pad_samples - window_size`，减窗口几乎被加 pad 抵消，净效果是**比最后语音帧晚约 `speech_pad_ms`**。初版"早一个 32ms 窗口、会削掉尾音"的说法**被证伪** | `utils_vad.py:609` |
+| C30 | **本项目不使用 `VADIterator`，改为直接调 silero 模型取「每帧语音概率」，切点规则全部自实现** ⚠️ **已回填** — 初版 §5.2 写的是「`VADIterator` 只负责门控」，但该节**同时要求的超长段切点规则需要逐帧概率**，而 `VADIterator` 恰恰不暴露概率（C5 已说明它的可调参数只有 5 个）。故实现改为 `load_silero_vad()` + 逐帧调用取概率 + 自写 `pick_cut_point`。**C5–C8 的结论依然全部成立**（帧长仍必须恰好 512、report 的 end 仍偏晚、超长段仍必须在上游限制），只是承载它们的对象不是 `VADIterator` | 实现：`src/chrometrans/audio/segmenter.py:39`（`pick_cut_point`）、`:72`/`:87`（模型适配与加载）；`grep -rn "VADIterator" src/` 仅剩一句解释性注释 |
 
 ### 3.3 ASR
 
@@ -362,7 +363,8 @@ UI 上必须明确提示当前处于降级模式 —— 否则用户会以为隔
 
 ### 5.2 `audio/segmenter.py` — 自有切句逻辑
 
-`VADIterator` 只负责**门控**，分割规则全部由本模块实现（C5–C8）。
+**不使用 `VADIterator`**：直接调 silero 模型取**每帧语音概率**，分割规则全部由本模块实现
+（C5–C8、C30）。理由见 C30 —— 超长段的切点规则需要逐帧概率，而 `VADIterator` 不暴露它。
 
 | 规则 | 取值 | 说明 |
 |---|---|---|
