@@ -14,6 +14,9 @@ dependencies = [
     "ctranslate2>=4.8.2",
     "nvidia-cublas-cu12>=12.9.2.10",
     "silero-vad>=6.2.1",
+    "fastapi>=0.141.1",
+    "uvicorn[standard]>=0.53.0",
+    "websockets>=17.1",
 ]
 
 [project.scripts]

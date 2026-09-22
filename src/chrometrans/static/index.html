@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>chrometrans 字幕</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+         background: #16181d; color: #e8eaed; }
+  header { position: sticky; top: 0; padding: 10px 16px; background: #1f2229;
+           border-bottom: 1px solid #2c3038; font-size: 13px; color: #9aa0a6; }
+  #cues { padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+  .cue { border-left: 3px solid #3b6fd4; padding-left: 12px; }
+  .src { font-size: 14px; color: #9aa0a6; }
+  .tgt { font-size: 22px; line-height: 1.35; margin-top: 4px; }
+  .tgt.missing { color: #6b7280; font-style: italic; font-size: 16px; }
+</style>
+</head>
+<body>
+<header id="status">连接中…</header>
+<div id="cues"></div>
+<script>
+const cues = document.getElementById('cues');
+const status = document.getElementById('status');
+const MAX_CUES = 300;
+
+function connect() {
+  const ws = new WebSocket(`ws://${location.host}/ws`);
+  ws.onopen = () => { status.textContent = '已连接'; };
+  ws.onclose = () => {
+    status.textContent = '连接断开，2 秒后重连…';
+    setTimeout(connect, 2000);
+  };
+  ws.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+    if (msg.event === 'cue') return addCue(msg.data);
+    if (msg.event === 'status') return setStatus(msg.data);
+    if (msg.event === 'error') return console.warn('pipeline error:', msg.data.message);
+  };
+}
+
+function addCue(cue) {
+  const el = document.createElement('div');
+  el.className = 'cue';
+  const src = document.createElement('div');
+  src.className = 'src';
+  src.textContent = cue.source;
+  const tgt = document.createElement('div');
+  tgt.className = cue.target ? 'tgt' : 'tgt missing';
+  tgt.textContent = cue.target || '（未翻译）';
+  el.append(src, tgt);
+  cues.append(el);
+  while (cues.children.length > MAX_CUES) cues.removeChild(cues.firstChild);
+  window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+}
+
+function setStatus(data) {
+  if (data.state === 'running') {
+    status.textContent = `运行中 · ${data.model} · ${data.device}`;
+  } else {
+    status.textContent = '已停止';
+  }
+}
+
+connect();
+</script>
+</body>
+</html>
