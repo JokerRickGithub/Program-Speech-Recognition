@@ -3752,8 +3752,10 @@ git commit -m "feat(cli): 命令行入口 + 端到端联调"
 - [ ] **回填 spec**：Task 5 用「直接调 silero 模型取概率」替代了 spec §5.2 写的
       「`VADIterator` 只负责门控」，理由是该节同时要求的超长段切点规则需要每帧概率。
       把这条修正写回 spec §5.2 与 §3.1 的约束表（新增一条 C30）。
-- [ ] **翻译凭据**：跑通 Azure F0 与 Google Cloud 的 key 申请，否则链上只有 Tier 0
-      —— 而 Tier 0 实测 60 次请求中 13 次传输失败（C19），不足以保证可用性。
+- [ ] **翻译凭据（必需，不是可选）**：申请 Azure F0 与 Google Cloud 的 key，
+      并设好对应环境变量。**没有 key 就没有任何中文翻译** —— 免 key 层实测
+      5/5 返回 HTTP 401（连伪造 key 也一样），已失效。此时程序仍会正常识别英文
+      并落盘（`target` 为 `null`），但网页上每条都是「（未翻译）」。
 - [ ] **首次运行下载模型**：`large-v3-turbo` 约 1.6 GB。若 HuggingFace Xet 传输卡在
       0 字节，需设 `HF_HUB_DISABLE_XET=1`（spec §8）。
 - [ ] **平台在窗口隐藏时是否自动暂停播放**：spec §9 列为「需实测」。把 Chrome 网课
