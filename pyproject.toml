@@ -1,0 +1,15 @@
+[project]
+name = "chrometrans"
+version = "0.1.0"
+description = "Chrome 网课实时字幕：按进程捕获音频 + 本地 ASR + 翻译，字幕落盘"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "process-audio-capture>=1.0.0",   # 主路径：按进程捕获 Chrome 音频
+    "pyaudiowpatch>=0.2.12.8",        # 降级路径：系统级 WASAPI loopback
+    "soxr",                           # 流式重采样 48k -> 16k
+    "numpy",
+]
+
+[tool.uv]
+package = false
