@@ -247,3 +247,36 @@ def test_loopback_read_timeout_raises_so_the_caller_can_fill_silence():
             s.read()
     finally:
         release.set()
+
+
+def test_loopback_read_returns_each_chunk_exactly_once():
+    """回归：成功取回后必须清 _pending，否则同一块数据会被返回两次。
+
+    旧实现只在「上一块还没读完」的分支里清 _pending；成功路径不清，于是第二次
+    read() 会命中 `fut is not None and fut.done()`，把 fut.result() 再交一遍。
+    降级路上的音频流会变成 A, A, B, B…，识别文本随之整段重复。
+    """
+    from chrometrans.audio.capture import AudioFormat, PcmConverter
+    from chrometrans.audio.source import SystemLoopbackStream
+
+    class CountingStream:
+        def __init__(self):
+            self.n = 0
+
+        def read(self, n, exception_on_overflow=False):
+            self.n += 1
+            # 每次给可区分的电平，好让"返回了同一块"这件事在数据上也看得出来
+            return np.full(2048, float(self.n), dtype=np.float32).tobytes()
+
+    s = SystemLoopbackStream(CaptureConfig(loopback_read_timeout_s=5.0))
+    s._stream = CountingStream()
+    s._converter = PcmConverter(AudioFormat(2, 48000, 32), 16000)
+    s._pool = ThreadPoolExecutor(max_workers=1)
+
+    try:
+        first = s.read()
+        second = s.read()
+        assert s._stream.n == 2, "第二次 read() 必须真的再读一次，不能复用上一块"
+        assert not np.array_equal(first, second), "两次读回的数据不应相同"
+    finally:
+        s._pool.shutdown(wait=False)

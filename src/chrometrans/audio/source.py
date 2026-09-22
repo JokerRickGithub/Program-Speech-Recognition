@@ -67,12 +67,19 @@ class SystemLoopbackStream:
         self._pending = self._pool.submit(
             self._stream.read, self._frames_per_buffer, False)
         try:
-            return self._converter.convert(
-                self._pending.result(timeout=self._cfg.loopback_read_timeout_s))
+            data = self._pending.result(
+                timeout=self._cfg.loopback_read_timeout_s)
         except FuturesTimeout as exc:
+            # 故意保留 _pending：这次读取还卡在 PortAudio 里，下次进来要靠它认出
+            # "上一次仍未返回"，否则会再派一个读，线程数就不止一个了
             raise CaptureError("降级路径读取超时") from exc
         except Exception as exc:
+            self._pending = None        # 已完成且失败：清掉，让下次重新读
             raise CaptureError(f"降级路径读取失败：{exc}") from exc
+        # 成功取回后必须清掉。留着它，下一次 read() 会走进上面 fut is not None
+        # 的分支，把**同一块**数据再返回一遍 —— 输出会变成 A, A, B, B…
+        self._pending = None
+        return self._converter.convert(data)
 
     def stop(self) -> None:
         if self._stream is not None:
