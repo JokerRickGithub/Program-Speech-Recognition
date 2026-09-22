@@ -181,3 +181,32 @@ def test_chunk_boundaries_do_not_lose_samples():
     assert len(a) == len(b) == 1
     assert np.allclose(a[0].audio, b[0].audio)
     assert a[0].start == b[0].start and a[0].end == b[0].end
+
+
+def test_chunk_boundaries_with_leading_silence_and_nonsilent_audio():
+    """带前导静音的真实音频：让 tape_origin != 0，真正走 lo 偏移那条路径。
+
+    brief 自带的 test_chunk_boundaries_do_not_lose_samples 证明不了 _tape/_tape_origin
+    不变量，两个独立原因：① _frames() 返回全零，np.allclose 是零比零，只能发现长度不符；
+    ② 语音从第 0 帧开始、且唯一的 _drop_before 在 _close 里、发生在切片之后，故两种喂法
+    在切片时 tape_origin 恒为 0，lo = start_abs - tape_origin 这条偏移路径从未被走到。
+    本测试用前导静音把 tape_origin 推到 9728，并用时变信号使「切错区间」可被检测。
+    """
+    probs = silence(20) + speech(20) + silence(25)   # 20 帧前导静音
+    cfg = SegmenterConfig(min_speech_ms=350, silence_break_ms=600)
+
+    audio = np.sin(np.arange(65 * 512, dtype=np.float32) * 0.01).astype(np.float32)
+
+    a = Segmenter(cfg, FakeVad(probs)).feed(audio)
+
+    piecewise = Segmenter(cfg, FakeVad(probs))
+    b = []
+    for i in range(65):
+        b.extend(piecewise.feed(audio[i * 512:(i + 1) * 512]))
+
+    assert len(a) == len(b) == 1
+    expected = audio[20 * 512:40 * 512]
+    assert np.allclose(a[0].audio, expected), "段音频必须正好是第 20..39 帧"
+    assert np.allclose(b[0].audio, expected)
+    assert a[0].start == b[0].start == 20 * 512 / SR
+    assert a[0].end == b[0].end == 40 * 512 / SR
