@@ -34,6 +34,8 @@ _k32.ReadFile.argtypes = [
 ]
 _k32.CloseHandle.restype = wintypes.BOOL
 _k32.CloseHandle.argtypes = [wintypes.HANDLE]
+_k32.CancelIoEx.restype = wintypes.BOOL
+_k32.CancelIoEx.argtypes = [wintypes.HANDLE, ctypes.c_void_p]
 
 PIPE_ACCESS_INBOUND = 0x00000001
 PIPE_TYPE_BYTE = 0x00000000
@@ -41,6 +43,18 @@ PIPE_WAIT = 0x00000000
 PIPE_UNLIMITED_INSTANCES = 255
 
 EXPECTED_BITS = 32          # float32；实测 DLL 固定输出此格式
+
+
+def _close_pipe(handle: int) -> None:
+    """先取消挂起 I/O 再关句柄 —— 否则同步句柄的 CloseHandle 会永久阻塞。
+
+    同步命名管道句柄上若仍有挂起的 ConnectNamedPipe / ReadFile，
+    CloseHandle 会一直等到该 I/O 完成才返回（而它可能永远等不到）。
+    CancelIoEx 会取消任何线程发起的挂起 I/O；返回 ERROR_NOT_FOUND
+    （没有挂起 I/O）属正常情况，忽略即可。
+    """
+    _k32.CancelIoEx(wintypes.HANDLE(handle), None)
+    _k32.CloseHandle(wintypes.HANDLE(handle))
 
 
 class CaptureError(RuntimeError):
@@ -237,5 +251,5 @@ class ProcessAudioStream:
                 pass
             self._cap = None
         if self._handle is not None:
-            _k32.CloseHandle(wintypes.HANDLE(self._handle))
+            _close_pipe(self._handle)
             self._handle = None

@@ -1,4 +1,7 @@
 import struct
+import threading
+import time
+from ctypes import wintypes
 
 import numpy as np
 import pytest
@@ -7,6 +10,7 @@ from chrometrans.audio.capture import (
     AudioFormat,
     CaptureError,
     PcmConverter,
+    _close_pipe,
     parse_wav_header,
 )
 
@@ -162,3 +166,34 @@ def test_constructor_failure_leaves_clean_stream(monkeypatch):
     with pytest.raises(CaptureError):
         stream.start()
     assert stream.is_started is False
+
+
+def test_close_pipe_does_not_hang_with_pending_connect():
+    import chrometrans.audio.capture as cap
+
+    pipe_name = rf"\\.\pipe\chrometrans_close_{time.time_ns()}"
+    handle = cap._k32.CreateNamedPipeW(
+        pipe_name,
+        cap.PIPE_ACCESS_INBOUND,
+        cap.PIPE_TYPE_BYTE | cap.PIPE_WAIT,
+        cap.PIPE_UNLIMITED_INSTANCES,
+        0, 0, 0, None,
+    )
+    assert handle != wintypes.HANDLE(-1).value
+
+    # 后台线程发起同步 ConnectNamedPipe：没有客户端连接 → 永久挂起
+    t = threading.Thread(
+        target=cap._k32.ConnectNamedPipe,
+        args=(wintypes.HANDLE(handle), None),
+        daemon=True,
+    )
+    t.start()
+    time.sleep(0.2)  # 让 ConnectNamedPipe 进入同步挂起状态
+
+    start = time.monotonic()
+    _close_pipe(handle)
+    elapsed = time.monotonic() - start
+
+    assert elapsed < 2.0, f"_close_pipe 阻塞了 {elapsed:.2f}s，CancelIoEx 未生效"
+    t.join(timeout=2.0)
+    assert not t.is_alive(), "挂起的 ConnectNamedPipe 未被取消，线程仍在阻塞"
