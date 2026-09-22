@@ -26,4 +26,5 @@ dev = ["pytest>=8.0"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = "-m 'not integration'"
 markers = ["integration: 需要真实音频设备与 Chrome 在播放"]

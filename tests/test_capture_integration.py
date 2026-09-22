@@ -12,12 +12,12 @@ def test_captures_real_audio_from_chrome():
     stream.start()
     try:
         total = []
-        for _ in range(40):                 # 约 400ms 的块 ×N
+        reads = 0
+        while sum(c.size for c in total) < 16000 * 2 and reads < 3000:
             chunk = stream.read()
+            reads += 1
             if chunk.size:
                 total.append(chunk)
-            if sum(len(c) for c in total) > 16000 * 3:
-                break
         audio = np.concatenate(total) if total else np.zeros(0, dtype=np.float32)
     finally:
         stream.stop()
