@@ -190,10 +190,22 @@ def test_close_pipe_does_not_hang_with_pending_connect():
     t.start()
     time.sleep(0.2)  # 让 ConnectNamedPipe 进入同步挂起状态
 
-    start = time.monotonic()
-    _close_pipe(handle)
-    elapsed = time.monotonic() - start
+    # _close_pipe 必须放到后台线程里调：若 CancelIoEx 失效，CloseHandle 会永久阻塞。
+    # 在主线程里同步调会把整个测试套件挂死（没有任何输出），而不是让这条测试失败。
+    done: list[float] = []
 
-    assert elapsed < 2.0, f"_close_pipe 阻塞了 {elapsed:.2f}s，CancelIoEx 未生效"
+    def _close() -> None:
+        began = time.monotonic()
+        _close_pipe(handle)
+        done.append(time.monotonic() - began)
+
+    threading.Thread(target=_close, daemon=True).start()
+    for _ in range(50):          # 最多等 5s
+        if done:
+            break
+        time.sleep(0.1)
+
+    assert done, "_close_pipe 5 秒内未返回：CancelIoEx 未生效，CloseHandle 卡死"
+    assert done[0] < 2.0, f"_close_pipe 阻塞了 {done[0]:.2f}s"
     t.join(timeout=2.0)
     assert not t.is_alive(), "挂起的 ConnectNamedPipe 未被取消，线程仍在阻塞"
