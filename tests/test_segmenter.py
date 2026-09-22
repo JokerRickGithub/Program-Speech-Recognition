@@ -210,3 +210,63 @@ def test_chunk_boundaries_with_leading_silence_and_nonsilent_audio():
     assert np.allclose(b[0].audio, expected)
     assert a[0].start == b[0].start == 20 * 512 / SR
     assert a[0].end == b[0].end == 40 * 512 / SR
+
+
+class TensorOnlyModel:
+    """只接受 torch.Tensor 的假模型，模拟 silero 6.x 的真实契约。
+
+    真 silero 拒绝 numpy 输入（R30 实测），所以这条测试的作用是：
+    在没有真模型、没有下载、没有 GPU 的情况下，钉死适配器的类型契约。
+    """
+
+    def __init__(self):
+        self.seen_sr = None
+        self.seen_is_tensor = None
+        self.seen_dtype = None
+
+    def __call__(self, x, sr):
+        import torch
+
+        self.seen_is_tensor = torch.is_tensor(x)
+        self.seen_dtype = x.dtype if self.seen_is_tensor else None
+        self.seen_sr = sr
+        if not self.seen_is_tensor:
+            raise RuntimeError(
+                "Expected a value of type 'Tensor' ... found type 'ndarray'"
+            )
+        return torch.tensor([[0.7]])
+
+
+def test_silero_vad_adapter_converts_numpy_to_tensor():
+    from chrometrans.audio.segmenter import _silero_vad
+    import torch
+
+    model = TensorOnlyModel()
+    vad = _silero_vad(model)
+
+    frame = np.zeros(512, dtype=np.float32)
+    prob = vad(frame, 16000)
+
+    assert model.seen_is_tensor is True
+    assert model.seen_dtype == torch.float32
+    assert model.seen_sr == 16000
+    assert isinstance(prob, float)
+    assert prob == pytest.approx(0.7)
+
+
+def test_silero_vad_adapter_accepts_non_contiguous_frame():
+    """ascontiguousarray 不是装饰：切片得来的帧可能不连续。"""
+    import torch
+
+    from chrometrans.audio.segmenter import _silero_vad
+
+    model = TensorOnlyModel()
+    vad = _silero_vad(model)
+
+    big = np.zeros(2048, dtype=np.float32)
+    frame = big[::2][:512]           # 步长切片 -> 非连续
+    assert not frame.flags["C_CONTIGUOUS"]
+
+    prob = vad(frame, 16000)
+    assert model.seen_is_tensor is True
+    assert isinstance(prob, float)

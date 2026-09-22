@@ -69,10 +69,25 @@ def pick_cut_point(probs: list[tuple[int, float]], frame_samples: int,
     return best_cut
 
 
+def _silero_vad(model) -> Callable[[np.ndarray, int], float]:
+    """把 silero 模型适配成 Segmenter 需要的 (numpy 帧, 采样率) -> float。
+
+    silero 6.x 只接受 torch.Tensor；返回的又是一个 (1, 1) 张量，
+    这里一并转成 Python float。
+    """
+    import torch
+
+    def vad(frame: np.ndarray, sample_rate: int) -> float:
+        x = torch.from_numpy(np.ascontiguousarray(frame, dtype=np.float32))
+        return float(model(x, sample_rate).item())
+
+    return vad
+
+
 def _load_silero() -> Callable[[np.ndarray, int], float]:
     from silero_vad import load_silero_vad
 
-    return load_silero_vad()
+    return _silero_vad(load_silero_vad())
 
 
 @dataclass
