@@ -160,17 +160,14 @@ def main(argv: list[str] | None = None) -> int:
     if args.no_server:
         launcher.set_page_option_enabled(False)
 
-    if (notice := keyless_notice(cfg.translate)):
-        relay.error.emit(notice)
-
     # 恢复上次的位置；落在已拔掉的显示器上就居中回来
     caption.apply_settings(restore_position(load_settings(), _screens()))
 
     # 网页是可选的。要在没开网页时也能原样跑，publish 得有个空实现。
-    # start_server 只返回投递函数、没有 stop 句柄 —— 这是有意的：服务跑在
-    # 守护线程上、随进程退出，取消勾选「同时开启网页」只是停止往里喂事件，
-    # 不会杀掉已起的服务。给 uvicorn 加 shutdown 得再在 Qt 槽里跳一段线程
-    # join 的舞，为一个没人会课上中途取消的复选框不值当。
+    # 复选框只在「开始」时被读一次（on_start 里的 should_start_page_server）：
+    # 它决定这一次开始要不要起服务。服务最多起一次（server_started 一旦为真
+    # 就不再回假）、跑在守护线程上、随进程退出。中途取消勾选没有任何效果 ——
+    # 取消勾选不是关服务的办法，这里有意不给拆除 API，代价是服务关不掉。
     publish = lambda event: None                                  # noqa: E731
     server_started = False
 
@@ -205,11 +202,18 @@ def main(argv: list[str] | None = None) -> int:
         launcher.set_capturing(False)
         launcher.show()
         launcher.raise_()
+        # 规格 §5.6：停止后把两个窗口反过来 —— 置顶窗留着会让人以为还在捕获
+        caption.hide()
 
     relay.status.connect(on_status)
     relay.cue.connect(caption.add_cue)
     relay.error.connect(lambda m: launcher.set_status(m, degraded=True))
     controller.finished.connect(on_finished)
+
+    # 这条提示必须放在 connect 之后：Qt 的信号在没有槽连着时发出去就是丢弃，
+    # 放在窗口创建那儿会静默消失（终端版会打印它，GUI 版不能反而更安静）。
+    if (notice := keyless_notice(cfg.translate)):
+        relay.error.emit(notice)
 
     def on_start(proc) -> None:
         nonlocal publish, server_started

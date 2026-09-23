@@ -153,3 +153,57 @@ def test_the_view_itself_is_trimmed_not_just_the_model(qapp):
     assert "s3" in text and "s4" in text, "最新的两条要留着"
     assert "s0" not in text and "s1" not in text, "超出上限的要真的从文档里消失"
     w.close()
+
+
+def _fill_window(w, n):
+    for i in range(n):
+        w.add_cue({"source": f"source line {i}", "target": f"译文 {i}"})
+
+
+def test_rerender_keeps_scroll_position_when_user_scrolled_up(qapp):
+    """淘汰触发重渲时，用户往回翻的历史位置不能被拽走。
+
+    满到上限后每来一句都会挤掉最旧一条、都会走 _rerender —— 若重渲把滚动条
+    复位，用户往上翻着看历史时会被下一句字幕拽走。
+    """
+    from chrometrans.gui.caption_window import CaptionWindow
+
+    w = CaptionWindow(cap=50)
+    w.show()
+    qapp.processEvents()
+    _fill_window(w, 50)
+
+    bar = w._view.verticalScrollBar()
+    assert bar.maximum() > 0, \
+        "offscreen 下滚动条要有有效范围，否则这条断言等于什么都没测"
+    mid = bar.maximum() // 2
+    bar.setValue(mid)
+    qapp.processEvents()
+    assert bar.value() == mid, "先把滚动条停到中间位置"
+
+    w.add_cue({"source": "newest", "target": "最新"})  # 触发淘汰 → _rerender
+    qapp.processEvents()
+
+    assert abs(bar.value() - mid) <= 2, "重渲不得把用户正在回看的位置拽走"
+    w.close()
+
+
+def test_rerender_follows_new_cue_when_at_bottom(qapp):
+    """停在底部时，淘汰重渲后仍粘在底部（跟随新字幕）。"""
+    from chrometrans.gui.caption_window import CaptionWindow
+
+    w = CaptionWindow(cap=50)
+    w.show()
+    qapp.processEvents()
+    _fill_window(w, 50)
+
+    bar = w._view.verticalScrollBar()
+    bar.setValue(bar.maximum())
+    qapp.processEvents()
+    assert bar.value() >= bar.maximum() - 4, "先把滚动条拉到底部"
+
+    w.add_cue({"source": "newest", "target": "最新"})  # 触发淘汰 → _rerender
+    qapp.processEvents()
+
+    assert bar.value() >= bar.maximum() - 4, "在底部就该一直粘住底部"
+    w.close()

@@ -106,14 +106,23 @@ class CaptionWindow(QWidget):
         self._view.clear()
 
     def _rerender(self) -> None:
-        """照着留下的字幕重渲一遍。
+        """照着留下的字幕重渲一遍，重建前后保住滚动位置。
 
-        改字号时走这条，否则新字号要等下一句才生效。**不动滚动位置** ——
-        由调用方决定，免得用户正往回翻时被拽到底部。
+        改字号与淘汰最旧一条都走这条。clear + 重新 append 会把滚动条拽走，
+        所以重建前先记下位置：本来就在底部就跟着新字幕回到最底部；用户自己
+        翻上去了就停在原地 —— 否则满到上限后每来一句，都会把正在回看历史
+        的人拽下去。
         """
+        bar = self._view.verticalScrollBar()
+        at_bottom = bar.value() >= bar.maximum() - 4
+        offset = bar.value()
         self._view.clear()
         for cue in self._transcript.cues():
             self._view.append(render_cue_html(cue, self._font_px))
+        if at_bottom:
+            bar.setValue(bar.maximum())
+        else:
+            bar.setValue(offset)
 
     def toPlainText(self) -> str:
         """给测试用：把显示内容当纯文本取出来。"""
