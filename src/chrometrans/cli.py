@@ -13,7 +13,7 @@ from chrometrans.audio.source import CaptureSource
 from chrometrans.config import Config, load_config
 from chrometrans.engine import Engine
 from chrometrans.translate.base import ChainTranslator
-from chrometrans.translate.google import GoogleTranslator
+from chrometrans.translate.google import GoogleFreeTranslator, GoogleTranslator
 from chrometrans.translate.microsoft import MicrosoftTranslator
 
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
@@ -34,10 +34,12 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 
 
 def build_translator_chain(cfg) -> ChainTranslator:
-    """Tier 1 Azure → Tier 2 Google → Tier 0 免 key 兜底。
+    """Tier 1 Azure → Tier 2 Google(key) → 免 key 兜底（谷歌 → 微软 Edge）。
 
-    绝不能只有免 key 一层（C17）。顺序刻意把带 key 的层放前面：免 key 层实测
-    已失效（5/5 HTTP 401，含伪造 key），放第一位只会让每次翻译先白吃一个失败请求。
+    绝不能只有免 key 一层（C17）。带 key 的层放最前面：放第一位只会让每次翻译
+    先白吃一个失败请求。免 key 这两层的实测结论（2026-09-23）不同，所以次序有别：
+    谷歌那条可用，微软 Edge 那条（`edge.microsoft.com/translate/auth`）已 404 下线。
+    死的那层放最后，只有谷歌也失败时才会为它多花一次请求。
     """
     providers = []
     if cfg.azure_key:
@@ -47,6 +49,7 @@ def build_translator_chain(cfg) -> ChainTranslator:
     if cfg.google_key:
         providers.append(GoogleTranslator(api_key=cfg.google_key,
                                           timeout_s=cfg.timeout_s))
+    providers.append(GoogleFreeTranslator(timeout_s=cfg.timeout_s))
     providers.append(MicrosoftTranslator(api_key=None, region=cfg.azure_region,
                                          timeout_s=cfg.timeout_s))
     return ChainTranslator(providers, cfg)

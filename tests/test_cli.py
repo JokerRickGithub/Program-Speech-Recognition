@@ -18,18 +18,18 @@ def test_parse_args_rejects_non_loopback_host():
         parse_args(["--host", "0.0.0.0"])
 
 
-def test_free_tier_only_when_no_keys():
+def test_only_free_tiers_when_no_keys():
+    """没 key 也必须有能用的兜底：免 key 谷歌排在前，微软 Edge 那条已下线排最后。"""
     cfg = TranslateConfig(azure_key=None, google_key=None)
     chain = build_translator_chain(cfg)
-    assert len(chain._providers) == 1
-    assert chain._providers[0].name == "microsoft-free"
+    assert [p.name for p in chain._providers] == ["google-free", "microsoft-free"]
 
 
 def test_full_chain_when_all_keys_present():
     cfg = TranslateConfig(azure_key="A", google_key="G")
     chain = build_translator_chain(cfg)
     assert [p.name for p in chain._providers] == [
-        "microsoft-azure", "google", "microsoft-free"]
+        "microsoft-azure", "google", "google-free", "microsoft-free"]
 
 
 def test_publish_drops_events_before_the_server_is_up():

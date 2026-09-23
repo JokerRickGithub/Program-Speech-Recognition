@@ -15,7 +15,7 @@ Chrome 音频（按进程，48kHz 立体声）
       ↓
 faster-whisper large-v3-turbo（本地 GPU，不联网）
       ↓
-   英译中（Azure / Google）
+   英译中（Azure / Google，配不到就退免 key 谷歌）
       ↓
 transcripts/<日期_时间>/captions.jsonl   ← 权威数据源
                         captions.srt     ← 派生视图，每 20 条重渲
@@ -35,21 +35,54 @@ http://127.0.0.1:8765/   ← 本地字幕页
 uv sync
 ```
 
-## 配置翻译凭据（**必需**）
+## 翻译
 
-翻译链是 `Azure → Google → 免 key 兜底`。**免 key 那一层已经失效**（实测 5 次请求
-5 次 HTTP 401），所以**没有 key 就等于没有中文翻译**：程序仍会正常识别英文、
-正常落盘，但每条字幕的 `target` 都是 `null`，网页上显示为「（未翻译）」。
+翻译链按顺序尝试，前一层失败就换下一层：
 
-设好下面任意一个即可：
+```text
+Azure（要 key）→ Google Cloud（要 key）→ 免 key 谷歌 → 免 key 微软 Edge
+```
 
-| 变量                        | 说明                                             |
-| --------------------------- | ------------------------------------------------ |
-| `AZURE_TRANSLATOR_KEY`    | Azure Translator 的 key（免费层 F0 即可）        |
-| `AZURE_TRANSLATOR_REGION` | 上面的 key 对应的区域，**默认 `global`** |
-| `GOOGLE_TRANSLATE_KEY`    | Google Cloud Translation 的 key                  |
+**不配 key 也有中文。** 免 key 的谷歌通道实测可用（2026-09-23，连发 10 次全部成功）。
+但它是个**未公开接口**（`translate.googleapis.com/translate_a/single?client=gtx`，
+googletrans 用的就是它），谷歌随时可能改动或限流，所以只当兜底 ——
+想稳定长期用，配一个 key 更踏实。最末尾那层微软 Edge 的免 key 通道已经**彻底下线**
+（`edge.microsoft.com/translate/auth` 实测 404），留着只是以防它哪天回来。
 
-两个都设就两个都试（Azure 优先）。都没有也能跑，只是没有译文。
+### 配 Azure（推荐，免费层够用）
+
+1. 在 Azure 门户建一个 **Translator** 资源，定价层选 **F0（免费）**：
+   每月 200 万字符，一门网课远远用不完。
+2. 建好后在资源的「密钥和终结点」页拿到 **密钥** 和 **区域**。
+3. 设好这两个环境变量再启动：
+
+```powershell
+$env:AZURE_TRANSLATOR_KEY="把密钥粘这里"
+$env:AZURE_TRANSLATOR_REGION="把区域粘这里"   # 例如 eastasia、westus2
+uv run chrometrans
+```
+
+**区域填错是 401 的最常见原因**——它必须和资源所在区域一致。只有多服务资源才写
+`global`，单独建的 Translator 资源写了 `global` 反而会 401。
+
+> `$env:` 只对当前 PowerShell 窗口有效，关掉窗口就没了。想一劳永逸用 `setx`
+> （但对已经开着的窗口不生效，得新开一个）。
+
+### 配 Google Cloud
+
+在 Google Cloud 建项目 → 启用 **Cloud Translation API** → 建一个 API key：
+
+```powershell
+$env:GOOGLE_TRANSLATE_KEY="你的key"
+uv run chrometrans
+```
+
+两个都配就两个都试，Azure 优先。
+
+### 怎么确认生效了
+
+看 `captions.jsonl` 里每条字幕的 `target` 字段：有中文就是生效了，是 `null` 就是
+所有翻译层都失败了。**终端不会单独为翻译失败报错**——它会安静地退回免 key 那层。
 
 ## 运行
 
@@ -121,8 +154,8 @@ export HF_HUB_DISABLE_XET=1
 **仍需你自己验证：**
 
 1. **长时 soak** —— 连续跑 2 小时以上，确认无音频劣化、无内存持续增长。
-2. **翻译凭据** —— 确认 Azure / Google 的 key 真的可用。在此之前每条字幕的 `target`
-   都会是 `null`：**没有 key 就没有中文**（见上「配置翻译凭据」）。
+2. **翻译凭据** —— 想用 Azure / Google 的 key 的话，确认它真的可用（区域填错会 401）。
+   不配也有中文（走免 key 谷歌），只是那层是未公开接口，长期稳定性没保证。
 
 ## 开发
 
