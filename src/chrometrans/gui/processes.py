@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import ctypes
+from ctypes import wintypes
 from dataclasses import dataclass
 from typing import Callable
 
@@ -15,6 +16,18 @@ from chrometrans.audio.capture import find_target_pid
 
 _PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
 _STILL_ACTIVE = 259
+
+# 私有的 kernel32 实例：ctypes.windll 会进程级缓存库对象，直接在上面设
+# argtypes 会改到别的代码正在用的共享对象。这里与 capture.py 的 _k32 一样，
+# 自己建一份再声明，不污染全局。
+_k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+
+_k32.OpenProcess.restype = wintypes.HANDLE
+_k32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+_k32.GetExitCodeProcess.restype = wintypes.BOOL
+_k32.GetExitCodeProcess.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
+_k32.CloseHandle.restype = wintypes.BOOL
+_k32.CloseHandle.argtypes = [wintypes.HANDLE]
 
 
 @dataclass(frozen=True)
@@ -52,17 +65,16 @@ def pid_alive(pid: int) -> bool:
     PID 又被回收给新进程的句柄照样能打开。这里能排除的是「PID 不存在」和
     「进程确实已退出」两种。
     """
-    kernel32 = ctypes.windll.kernel32
-    handle = kernel32.OpenProcess(_PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+    handle = _k32.OpenProcess(_PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
     if not handle:
         return False
     try:
         code = ctypes.c_ulong()
-        if not kernel32.GetExitCodeProcess(handle, ctypes.byref(code)):
+        if not _k32.GetExitCodeProcess(wintypes.HANDLE(handle), ctypes.byref(code)):
             return False
         return code.value == _STILL_ACTIVE
     finally:
-        kernel32.CloseHandle(handle)
+        _k32.CloseHandle(wintypes.HANDLE(handle))
 
 
 def make_resolver(pinned: AudioProcess, *,
