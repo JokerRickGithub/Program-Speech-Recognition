@@ -36,10 +36,16 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 def build_translator_chain(cfg) -> ChainTranslator:
     """Tier 1 Azure → Tier 2 Google(key) → 免 key 兜底（谷歌 → 微软 Edge）。
 
-    绝不能只有免 key 一层（C17）。带 key 的层放最前面：放第一位只会让每次翻译
-    先白吃一个失败请求。免 key 这两层的实测结论（2026-09-23）不同，所以次序有别：
-    谷歌那条可用，微软 Edge 那条（`edge.microsoft.com/translate/auth`）已 404 下线。
-    死的那层放最后，只有谷歌也失败时才会为它多花一次请求。
+    带 key 的层放最前面：放最后只会让每次翻译先白吃一个失败请求。
+    免 key 这两层的实测结论（2026-09-23）不同，所以次序有别：谷歌那条可用，
+    微软 Edge 那条（`edge.microsoft.com/translate/auth`）已 404 下线。死的那层
+    放最后，只有谷歌也失败时才会为它多花一次请求。
+
+    ⚠️ 不配 key 时这条链**只剩免 key 层**，也就是 C17 明令禁止的「免 key 端点
+    作为单点依赖」—— 谷歌那个端点同样是未公开的，可能像微软 Edge 的 auth 端点
+    一样一夜之间 404。这里做不到在没 key 的情况下满足 C17 的字面要求，所以改为
+    满足它的本意：**别让它静默发生**。没配 key 时 `keyless_notice()` 会在启动时
+    明确告知。想真正满足 C17 就得配 key。
     """
     providers = []
     if cfg.azure_key:
@@ -53,6 +59,20 @@ def build_translator_chain(cfg) -> ChainTranslator:
     providers.append(MicrosoftTranslator(api_key=None, region=cfg.azure_region,
                                          timeout_s=cfg.timeout_s))
     return ChainTranslator(providers, cfg)
+
+
+def keyless_notice(cfg) -> str | None:
+    """没配 key 时返回一句提醒，配了就返回 None。
+
+    C17 要求免 key 端点不可作为单点依赖。不配 key 时链上确实只剩免 key 层，
+    而那个谷歌端点是未公开的 —— 约束的本意是别让这件事**静默**发生
+    （当初就是微软的 auth 端点一夜 404 打断了所有集成）。所以这里把它说出来。
+    """
+    if cfg.azure_key or cfg.google_key:
+        return None
+    return ("没有配置翻译 key：中文将由免 key 谷歌通道提供。"
+            "那是未公开接口，随时可能失效或被限流（C17）。"
+            "想稳定请设 AZURE_TRANSLATOR_KEY 或 GOOGLE_TRANSLATE_KEY。")
 
 
 def segment_source(cfg: Config, emit: Callable[[dict], None],
@@ -80,6 +100,10 @@ def segment_source(cfg: Config, emit: Callable[[dict], None],
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(sys.argv[1:] if argv is None else argv)
     cfg = load_config()
+
+    notice = keyless_notice(cfg.translate)
+    if notice:
+        print(f"! {notice}", file=sys.stderr)
 
     from chrometrans.asr.whisper_engine import WhisperEngine
     from chrometrans.server import EventBus, create_app

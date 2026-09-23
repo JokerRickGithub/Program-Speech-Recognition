@@ -2,7 +2,12 @@ import numpy as np
 import pytest
 
 from chrometrans.audio.segmenter import Segment
-from chrometrans.cli import build_translator_chain, parse_args, print_event
+from chrometrans.cli import (
+    build_translator_chain,
+    keyless_notice,
+    parse_args,
+    print_event,
+)
 from chrometrans.config import Config, TranslateConfig
 
 
@@ -23,6 +28,14 @@ def test_only_free_tiers_when_no_keys():
     cfg = TranslateConfig(azure_key=None, google_key=None)
     chain = build_translator_chain(cfg)
     assert [p.name for p in chain._providers] == ["google-free", "microsoft-free"]
+
+
+def test_keyless_notice_fires_exactly_when_there_is_no_key():
+    """C17 的字面要求在没 key 时做不到，那就满足它的本意：别静默。"""
+    assert keyless_notice(TranslateConfig(azure_key=None, google_key=None))
+    assert keyless_notice(TranslateConfig(azure_key="A", google_key=None)) is None
+    assert keyless_notice(TranslateConfig(azure_key=None, google_key="G")) is None
+    assert keyless_notice(TranslateConfig(azure_key="A", google_key="G")) is None
 
 
 def test_full_chain_when_all_keys_present():

@@ -15,7 +15,7 @@ Chrome 音频（按进程，48kHz 立体声）
       ↓
 faster-whisper large-v3-turbo（本地 GPU，不联网）
       ↓
-   英译中（Azure / Google，配不到就退免 key 谷歌）
+   英译中（Azure / Google → 免 key 谷歌 → 免 key 微软 Edge）
       ↓
 transcripts/<日期_时间>/captions.jsonl   ← 权威数据源
                         captions.srt     ← 派生视图，每 20 条重渲
