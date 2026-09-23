@@ -2,6 +2,8 @@ import os
 
 import pytest
 
+pytestmark = pytest.mark.gui
+
 
 @pytest.fixture(scope="module")
 def qapp():
@@ -20,7 +22,6 @@ def relay(qapp):
     return EventRelay()
 
 
-@pytest.mark.gui
 def test_cue_event_reaches_the_cue_signal(relay):
     got = []
     relay.cue.connect(got.append)
@@ -30,7 +31,6 @@ def test_cue_event_reaches_the_cue_signal(relay):
     assert got == [{"id": 1, "source": "hello"}]
 
 
-@pytest.mark.gui
 def test_status_event_reaches_the_status_signal(relay):
     got = []
     relay.status.connect(got.append)
@@ -41,7 +41,6 @@ def test_status_event_reaches_the_status_signal(relay):
     assert got == [{"state": "loading", "message": "正在加载模型"}]
 
 
-@pytest.mark.gui
 def test_error_event_reaches_the_error_signal_with_a_plain_string(relay):
     """控件上显示的是文字，不是 dict —— 在这层就把它拍平。"""
     got = []
@@ -52,12 +51,10 @@ def test_error_event_reaches_the_error_signal_with_a_plain_string(relay):
     assert got == ["翻译失败：超时"]
 
 
-@pytest.mark.gui
 def test_an_unknown_event_kind_is_ignored_rather_than_crashing(relay):
     relay.emit_event({"event": "未来才有的事件", "data": {}})   # 不应抛异常
 
 
-@pytest.mark.gui
 def test_a_cue_without_data_does_not_crash(relay):
     """引擎的 error 事件没有 data 时也走过这条路，别在取字段时炸掉。"""
     relay.emit_event({"event": "error"})

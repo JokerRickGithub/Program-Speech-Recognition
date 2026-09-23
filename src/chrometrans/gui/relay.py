@@ -13,7 +13,6 @@ class EventRelay(QObject):
     cue = Signal(dict)
     status = Signal(dict)
     error = Signal(str)
-    finished = Signal()
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
