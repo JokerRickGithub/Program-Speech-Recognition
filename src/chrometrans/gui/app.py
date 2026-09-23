@@ -50,6 +50,7 @@ class CaptureController(QObject):
         self._engine_factory = engine_factory or self._default_factory
         self._thread: threading.Thread | None = None
         self._engine = None
+        self._abandoned = False
 
     def _default_factory(self, cfg, emit, proc):
         # 延迟 import：torch 那一串只在真要跑的时候才拉进来，否则光是打开
@@ -77,6 +78,7 @@ class CaptureController(QObject):
             except Exception as exc:
                 self._relay.error.emit(f"捕获异常结束：{exc}")
             finally:
+                self._abandoned = False
                 self.finished.emit()
 
         self._engine = engine
@@ -90,15 +92,24 @@ class CaptureController(QObject):
         引擎卡住时不能让界面永久停在「正在停止」。线程是守护线程，进程退出
         不会被它挂住，所以放弃等待是安全的。
         """
+        if self._abandoned:
+            # 已经放弃过的引擎不必再等一遍 —— 那只会把界面再冻满一个超时
+            return
         engine, thread = self._engine, self._thread
         if engine is None or thread is None:
             return
         engine.stop()
         thread.join(timeout_s)
         if thread.is_alive():
+            # 放弃等待，但不能假装这台引擎不存在：线程还活着，running() 就得
+            # 照实说是 True，否则第二台引擎会撞在同一条命名管道上。界面先切回
+            # 未捕获，让用户看清出了什么事。
+            self._abandoned = True
             self._relay.error.emit(
                 f"引擎在 {timeout_s:.0f} 秒内没有停下，已放弃等待；"
                 f"它不会再写入字幕，进程退出时会被一并结束")
+            self.finished.emit()
+            return
         self._engine = None
         self._thread = None
 
@@ -121,6 +132,16 @@ def _screens() -> list[tuple[int, int, int, int]]:
 
     return [(g.x(), g.y(), g.width(), g.height())
             for g in QGuiApplication.screens()]
+
+
+def should_start_page_server(*, no_server: bool, enabled: bool,
+                             started: bool) -> bool:
+    """网页服务最多起一次。
+
+    端口被第一份实例一直占着（R17：它没有停止接口），再起一份只会得到一个
+    绑不上端口的空壳，事件全被它吞掉 —— 页面看着在，却永远不更新，还不报错。
+    """
+    return not no_server and enabled and not started
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -151,6 +172,7 @@ def main(argv: list[str] | None = None) -> int:
     # 不会杀掉已起的服务。给 uvicorn 加 shutdown 得再在 Qt 槽里跳一段线程
     # join 的舞，为一个没人会课上中途取消的复选框不值当。
     publish = lambda event: None                                  # noqa: E731
+    server_started = False
 
     def emit(event: dict) -> None:
         """引擎的事件同时给界面和网页 —— 与 cli.py 走的是同一条路。"""
@@ -190,12 +212,20 @@ def main(argv: list[str] | None = None) -> int:
     controller.finished.connect(on_finished)
 
     def on_start(proc) -> None:
-        nonlocal publish
-        if not args.no_server and launcher.open_page_enabled():
+        nonlocal publish, server_started
+        if controller.running():
+            # 上一次的捕获还没退干净（多半是停止时超时放弃的那台引擎）。
+            # 这时不能收窗口、不能把按钮切成「停止」—— 什么都还没开始跑。
+            relay.error.emit("上一次的捕获还没停下来，请退出程序后重开")
+            return
+        if should_start_page_server(no_server=args.no_server,
+                                    enabled=launcher.open_page_enabled(),
+                                    started=server_started):
             from chrometrans.server import EventBus
             from chrometrans.serving import start_server
 
             publish = start_server(EventBus(), args.host, args.port)
+            server_started = True
             print(f"字幕页： http://{args.host}:{args.port}/")
 
         caption.clear_cues()

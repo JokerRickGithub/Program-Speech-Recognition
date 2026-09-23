@@ -172,3 +172,73 @@ def test_loopback_hosts_are_still_the_only_allowed_ones():
 
     with pytest.raises(SystemExit):
         parse_args(["--host", "0.0.0.0"])
+
+
+def test_a_timed_out_stop_returns_the_ui_to_uncaptured_but_keeps_the_engine_visible(
+        qapp, relay):
+    """放弃等待不等于假装它不存在：界面切回未捕获，但 running() 仍是 True ——
+    两份实例会撞在同一条命名管道上。"""
+    from chrometrans.gui.app import CaptureController
+
+    stuck = threading.Event()           # 永远不 set
+    engine = FakeEngine(release=stuck)
+    c = CaptureController(relay, engine_factory=lambda cfg, emit, proc: engine)
+    finished = []
+    errors = []
+    c.finished.connect(lambda: finished.append(True))
+    relay.error.connect(errors.append)
+
+    c.start(object())
+    assert engine.started.wait(2)
+
+    c.stop_and_wait(timeout_s=0.3)
+
+    # 这个 emit 在主线程上（stop_and_wait 就在主线程里跑），所以是直连、立即到达 ——
+    # 不用 processEvents()。若谁把它挪进引擎线程，这里就会失败，那正是要拦的。
+    assert finished, "超时放弃后界面必须能切回未捕获状态"
+    assert c.running(), "线程还活着，running() 不能撒谎"
+
+    before = len(errors)
+    c.start(object())
+    assert len(errors) > before, "上一台还在跑，第二次启动要被拒绝"
+
+    # 别把卡住的线程留给别的用例
+    stuck.set()
+    c.stop_and_wait(timeout_s=2)        # 已经放弃过，这次立刻返回
+
+
+def test_a_second_stop_after_a_timeout_does_not_wait_again(qapp, relay):
+    """放弃过的引擎不必再等一遍 —— 那只会把界面再冻满一个超时。
+
+    这条在修复前也会通过（引用已经被清成 None，第二次直接返回）。它是为了锁住
+    修复后的行为：谁要是保留了引用却忘了短路，界面就会再冻一次。
+    """
+    from chrometrans.gui.app import CaptureController
+
+    stuck = threading.Event()
+    engine = FakeEngine(release=stuck)
+    c = CaptureController(relay, engine_factory=lambda cfg, emit, proc: engine)
+
+    c.start(object())
+    assert engine.started.wait(2)
+
+    c.stop_and_wait(timeout_s=0.3)
+    began = time.monotonic()
+    c.stop_and_wait(timeout_s=0.3)
+    elapsed = time.monotonic() - began
+
+    assert elapsed < 0.15, "第二次不该再等一个 0.3 秒的超时"
+
+    stuck.set()
+    time.sleep(0.05)
+
+
+def test_the_page_server_is_started_at_most_once():
+    """端口被第一份实例一直占着（它没有停止接口），再起一份只会得到绑不上端口的
+    空壳，事件全被它吞掉 —— 页面看着在，却永远不更新，还不报错。"""
+    from chrometrans.gui.app import should_start_page_server
+
+    assert should_start_page_server(no_server=False, enabled=True, started=False)
+    assert not should_start_page_server(no_server=False, enabled=True, started=True)
+    assert not should_start_page_server(no_server=False, enabled=False, started=False)
+    assert not should_start_page_server(no_server=True, enabled=True, started=False)
