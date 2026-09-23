@@ -359,8 +359,8 @@ chrometrans-gui = "chrometrans.gui.app:main"
 
 | 风险 | 说明与缓解 |
 |---|---|
-| **`enumerate_audio_processes()` 的耗时未知** | 它每次要枚举音频会话。若单次超过约 100 ms，2 秒轮询会让界面发顿。**实现时先实测**；超阈值就把刷新挪到工作线程。这是一条待测项，不是已知结论 |
-| **PySide6 与 torch 的 Qt 插件可能打架** | 两者都可能带 Qt 运行库。若出现 `Plugin initialization failed` 或找不到平台插件，需显式设置 `QT_PLUGIN_PATH` 指向 PySide6 自己那份。**实现时实测** |
+| **`enumerate_audio_processes()` 的耗时** | 实测（本机 11 个音频会话）：稳态单次约 24–28 ms，2 秒轮询（占周期约 1.3%）不卡界面，**无需挪线程**。冷启动首跑约 126 ms，但只出现一次、发生在启动路径（启动器的首次 `refresh()`，此时窗口未显示、`app.exec()` 尚未进入），不在轮询路径上。代价随音频会话数增长，到数十个会话的量级再考虑挪线程 |
+| **PySide6 与 torch 的 Qt 插件共存** | 实测（本机 Python 3.13 / Windows 11）：PySide6 6.11.2 / Qt 6.11.2 与 torch 2.14.0+cpu（仅 silero-vad 引入）共存，真实 windows 平台插件正常加载，**无需设置 `QT_PLUGIN_PATH`**，§5.7 不加任何代码 |
 | **多显示器拔插** | 保存的坐标可能落在已断开的屏幕上。已写入 §5.3：恢复时校验可见性，否则居中 |
 | **两份实例会撞管道名** | `CaptureConfig.pipe_name` 是固定的 `\\.\pipe\chrometrans`。同时开两份会互相干扰。v1 不处理（范围外），但要在 README 里写一句 |
 | **悬浮窗盖不住独占全屏** | 置顶窗口能盖住普通全屏，盖不住独占全屏。网课是窗口化的，风险低 |
