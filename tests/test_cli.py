@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 
 from chrometrans.audio.segmenter import Segment
-from chrometrans.cli import build_translator_chain, parse_args
+from chrometrans.cli import build_translator_chain, parse_args, print_event
 from chrometrans.config import Config, TranslateConfig
 
 
@@ -76,3 +76,39 @@ def test_segment_source_stops_capture_when_the_generator_is_closed(monkeypatch):
     gen.close()    # 模拟 Ctrl+C / GC 时的提前关闭
 
     assert stopped["v"], "提前关闭也必须 stop() 采集源"
+
+
+def test_print_event_reports_every_status_transition(capsys):
+    """四个状态都要在终端可见。
+
+    回归：以前只认 error/degraded，于是「启动自检读到静音」（warning）和
+    「已停止」在终端上是彻底静默的 —— 用户分不清"在正常工作"和"根本没在录"。
+    """
+    print_event({"event": "status", "data": {
+        "state": "running", "model": "large-v3-turbo", "device": "cuda"}})
+    print_event({"event": "status", "data": {
+        "state": "running", "capture": "process", "pid": 4321}})
+    print_event({"event": "status", "data": {
+        "state": "warning", "message": "启动自检未通过（读到的是静音）"}})
+    print_event({"event": "status", "data": {
+        "state": "degraded", "message": "已降级到系统级捕获：会混入背景音乐"}})
+    print_event({"event": "status", "data": {"state": "stopped"}})
+
+    err = capsys.readouterr().err
+    assert "运行中" in err and "large-v3-turbo" in err
+    assert "PID 4321" in err, "第二种 running 事件要报按进程捕获的 PID"
+    assert "启动自检未通过" in err, "warning 以前是静默的"
+    assert "已降级到系统级捕获" in err
+    assert "已停止" in err
+
+
+def test_print_event_keeps_stdout_clean_for_cues(capsys):
+    """字幕走 stdout、状态走 stderr，好让 `> cues.txt` 拿到干净的流。"""
+    print_event({"event": "cue", "data": {
+        "start": 1.5, "source": "hello", "target": "你好"}})
+    print_event({"event": "status", "data": {"state": "stopped"}})
+
+    out, err = capsys.readouterr()
+    assert "hello" in out and "你好" in out
+    assert "已停止" not in out, "状态不能污染 stdout"
+    assert "已停止" in err

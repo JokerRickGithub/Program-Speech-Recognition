@@ -120,13 +120,35 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def print_event(event: dict) -> None:
+    """字幕走 stdout，状态与错误走 stderr。
+
+    分开是为了 `uv run chrometrans > cues.txt` 能拿到干净的字幕流。
+    """
     data = event.get("data", {})
     if event["event"] == "cue":
         print(f"[{data['start']:6.2f}] {data['source']}")
         if data.get("target"):
             print(f"         {data['target']}")
-    elif event["event"] == "error" or data.get("state") == "degraded":
+        return
+
+    if event["event"] == "error":
         print(f"! {data.get('message')}", file=sys.stderr)
+        return
+
+    # 状态事件以前只做给网页看，终端全程静默 —— 于是「到底抓没抓到、有没有
+    # 降级」只能靠另外开网页确认，而「启动自检读到静音」这条连网页之外无迹可寻。
+    # 这里把四个状态都打出来，文案与 index.html 的 setStatus() 逐字一致，
+    # 免得同一个状态在两个地方有两种说法。
+    state = data.get("state")
+    if state == "running":
+        if data.get("model"):
+            print(f"— 运行中 · {data['model']} · {data['device']}", file=sys.stderr)
+        else:
+            print(f"— 运行中 · 按进程捕获（PID {data.get('pid')}）", file=sys.stderr)
+    elif state in ("degraded", "warning"):
+        print(f"! {data.get('message')}", file=sys.stderr)
+    elif state == "stopped":
+        print("— 已停止", file=sys.stderr)
 
 
 def publish(bus, loop: asyncio.AbstractEventLoop | None, event: dict) -> None:
