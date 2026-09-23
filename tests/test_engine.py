@@ -39,7 +39,7 @@ def _engine(tmp_path, translator, segments, utterance="hello world"):
     return eng, events
 
 
-def test_emits_cue_and_writes_both_formats(tmp_path):
+def test_emits_cue_and_writes_all_three_artifacts(tmp_path):
     segs = [Segment(1, 0.0, 2.0, np.zeros(32000, dtype=np.float32))]
     eng, events = _engine(tmp_path, StubTranslator(), segs)
 
@@ -53,7 +53,9 @@ def test_emits_cue_and_writes_both_formats(tmp_path):
     session = next(tmp_path.iterdir())
     assert (session / "captions.jsonl").exists()
     assert (session / "captions.srt").exists()
+    assert (session / "captions.md").exists()
     assert "译:hello world" in (session / "captions.srt").read_text(encoding="utf-8")
+    assert "译:hello world" in (session / "captions.md").read_text(encoding="utf-8")
 
 
 def test_translation_failure_keeps_source(tmp_path):
@@ -129,6 +131,141 @@ def test_srt_can_be_rerendered_from_jsonl_alone(tmp_path):
         JsonlWriter(session / "captions.jsonl").read_all())
 
 
+def test_markdown_can_be_rerendered_from_jsonl_alone(tmp_path):
+    """课后补渲靠的就是这条：写 md 渲染器只是为了复习，历史会话不能重录一遍。"""
+    from chrometrans.output.jsonl import JsonlWriter
+    from chrometrans.output.markdown import render
+
+    segs = [Segment(i, float(i), float(i) + 1, np.zeros(16000, dtype=np.float32))
+            for i in range(3)]
+    eng, _ = _engine(tmp_path, StubTranslator(), segs)
+    eng.run()
+
+    session = next(tmp_path.iterdir())
+    assert (session / "captions.md").read_text(encoding="utf-8") == render(
+        JsonlWriter(session / "captions.jsonl").read_all())
+
+
+def test_markdown_written_even_for_a_short_session(tmp_path):
+    """默认每 20 条才重渲一次；收尾必须补渲，否则短会话根本没有 Markdown。"""
+    segs = [Segment(1, 0.0, 2.0, np.zeros(32000, dtype=np.float32))]
+    eng, _ = _engine(tmp_path, StubTranslator(), segs)
+    eng.run()
+
+    session = next(tmp_path.iterdir())
+    md = session / "captions.md"
+    assert md.exists()
+    assert md.read_text(encoding="utf-8").startswith("# 网课字幕\n")
+
+
+def _broken_cues_session(tmp_path):
+    """造一份 render 会炸的 JSONL：start 是 null，format_* 里做算术就抛。"""
+    from chrometrans.output.jsonl import JsonlWriter
+
+    session = tmp_path / "2026-09-23_1030"
+    session.mkdir()
+    jsonl = session / "captions.jsonl"
+    jsonl.write_text(
+        '{"id": 1, "start": null, "end": 2.0, "source": "x", '
+        '"target": null, "src_lang": "en", "tgt_lang": "zh"}\n',
+        encoding="utf-8")
+    return session, JsonlWriter(jsonl)
+
+
+def test_render_failure_does_not_escape(tmp_path):
+    """重渲抛异常时不得逃出 _render_srt（R22）。
+
+    它跑在 run() 的 finally 里：异常逃出去会吞掉 stopped 事件、让捕获进程崩掉。
+    一行 start=null 的 JSONL 就能构造出这种输入 —— read_all 只吞
+    ValueError/TypeError，而 Cue(**d) 键齐全时构造是成功的，炸点在 render()。
+    """
+    session, writer = _broken_cues_session(tmp_path)
+
+    events = []
+    eng = Engine(cfg=Config(output=OutputConfig(output_root=tmp_path)),
+                 on_event=events.append, asr=None, translator=None, segments=[])
+    eng._render_srt(session, writer)     # 不得抛
+
+    assert any(e["event"] == "error" for e in events)
+
+
+def test_both_views_report_and_neither_escapes_when_both_fail(tmp_path):
+    """两个视图各自兜错：同一次重渲里两份都炸，也要各报各的、都不逃出去。"""
+    session, writer = _broken_cues_session(tmp_path)
+
+    events = []
+    eng = Engine(cfg=Config(output=OutputConfig(output_root=tmp_path)),
+                 on_event=events.append, asr=None, translator=None, segments=[])
+    eng._render_views(session, writer)   # 不得抛
+
+    messages = [e["data"]["message"] for e in events if e["event"] == "error"]
+    assert any("captions.srt" in m for m in messages), "SRT 的失败要单独报"
+    assert any("captions.md" in m for m in messages), "Markdown 的失败要单独报"
+
+
+def test_one_broken_view_does_not_block_the_other(tmp_path, monkeypatch):
+    """Markdown 渲不出来时 SRT 仍须写出，且报错要指名道姓。
+
+    后半句才是这条测试真正能分辨的东西：SRT 排在前面，所以"md 崩了 srt 还在"
+    这件事连把两个视图塞进同一个 try 的写法也能满足。而"哪个视图坏了"必须说
+    清楚 —— 共用一个 try 时只会抛一句笼统的「重渲失败」，你无从知道丢的是
+    播放器用的 srt 还是复习用的 md。
+    """
+    import chrometrans.engine as engine_mod
+    from chrometrans.output.jsonl import JsonlWriter
+
+    session = tmp_path / "2026-09-23_1030"
+    session.mkdir()
+    (session / "captions.jsonl").write_text(
+        '{"id": 1, "start": 0.0, "end": 1.0, "source": "x", '
+        '"target": "y", "src_lang": "en", "tgt_lang": "zh"}\n',
+        encoding="utf-8")
+
+    def boom(cues):
+        raise RuntimeError("markdown 炸了")
+
+    monkeypatch.setattr(engine_mod, "render_markdown", boom)
+
+    events = []
+    eng = Engine(cfg=Config(output=OutputConfig(output_root=tmp_path)),
+                 on_event=events.append, asr=None, translator=None, segments=[])
+    eng._render_views(session, JsonlWriter(session / "captions.jsonl"))
+
+    assert (session / "captions.srt").exists(), "markdown 失败不得连累 SRT"
+    assert not (session / "captions.md").exists()
+
+    messages = [e["data"]["message"] for e in events if e["event"] == "error"]
+    assert any("captions.md" in m for m in messages), "报错必须指明是哪个视图坏了"
+    assert not any("captions.srt" in m for m in messages), "SRT 这份是好的，不该被牵连"
+
+
+def test_broken_srt_does_not_block_markdown(tmp_path, monkeypatch):
+    """反向也成立：SRT 被占用 / 炸掉时 markdown 照常产出。"""
+    import chrometrans.engine as engine_mod
+    from chrometrans.output.jsonl import JsonlWriter
+
+    session = tmp_path / "2026-09-23_1030"
+    session.mkdir()
+    (session / "captions.jsonl").write_text(
+        '{"id": 1, "start": 0.0, "end": 1.0, "source": "x", '
+        '"target": "y", "src_lang": "en", "tgt_lang": "zh"}\n',
+        encoding="utf-8")
+
+    def boom(cues):
+        raise RuntimeError("srt 炸了")
+
+    monkeypatch.setattr(engine_mod, "render_srt", boom)
+
+    events = []
+    eng = Engine(cfg=Config(output=OutputConfig(output_root=tmp_path)),
+                 on_event=events.append, asr=None, translator=None, segments=[])
+    eng._render_views(session, JsonlWriter(session / "captions.jsonl"))
+
+    assert (session / "captions.md").exists(), "SRT 失败不得连累 markdown"
+    assert not (session / "captions.srt").exists()
+    assert any(e["event"] == "error" for e in events)
+
+
 def test_restart_in_same_minute_does_not_duplicate_cue_ids(tmp_path, monkeypatch):
     """同分钟内重启：目录复用、JSONL 追加，cue_id 必须续号（R21）。"""
     import chrometrans.engine as engine_mod
@@ -151,31 +288,6 @@ def test_restart_in_same_minute_does_not_duplicate_cue_ids(tmp_path, monkeypatch
     session = next(tmp_path.iterdir())
     cues = JsonlWriter(session / "captions.jsonl").read_all()
     assert [c.id for c in cues] == [1, 2]
-
-
-def test_render_failure_does_not_escape(tmp_path):
-    """重渲抛异常时不得逃出 _render_srt（R22）。
-
-    它跑在 run() 的 finally 里：异常逃出去会吞掉 stopped 事件、让捕获进程崩掉。
-    一行 start=null 的 JSONL 就能构造出这种输入 —— read_all 只吞
-    ValueError/TypeError，而 Cue(**d) 键齐全时构造是成功的，炸点在 render()。
-    """
-    from chrometrans.output.jsonl import JsonlWriter
-
-    session = tmp_path / "2026-09-23_1030"
-    session.mkdir()
-    jsonl = session / "captions.jsonl"
-    jsonl.write_text(
-        '{"id": 1, "start": null, "end": 2.0, "source": "x", '
-        '"target": null, "src_lang": "en", "tgt_lang": "zh"}\n',
-        encoding="utf-8")
-
-    events = []
-    eng = Engine(cfg=Config(output=OutputConfig(output_root=tmp_path)),
-                 on_event=events.append, asr=None, translator=None, segments=[])
-    eng._render_srt(session, JsonlWriter(jsonl))     # 不得抛
-
-    assert any(e["event"] == "error" for e in events)
 
 
 def test_writer_close_failure_does_not_kill_the_teardown(tmp_path, monkeypatch):

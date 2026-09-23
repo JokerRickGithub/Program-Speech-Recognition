@@ -4,7 +4,7 @@
 
 Chrome 自带的 Live Caption 画在浏览器的原生层里，任何扩展都抓不到它的文字。
 所以这个项目不抓字幕，而是**自己重做一遍**：按进程抓 Chrome 的声音 → 本地语音识别 →
-翻译成中文 → 同时写 JSONL 与 SRT，并在本地网页上滚动显示。
+翻译成中文 → 同时写 JSONL、SRT 与 Markdown，并在本地网页上滚动显示。
 
 ## 它做什么
 
@@ -18,7 +18,8 @@ faster-whisper large-v3-turbo（本地 GPU，不联网）
    英译中（Azure / Google → 免 key 谷歌 → 免 key 微软 Edge）
       ↓
 transcripts/<日期_时间>/captions.jsonl   ← 权威数据源
-                        captions.srt     ← 派生视图，每 20 条重渲
+                        captions.srt     ← 派生视图：给播放器跟读
+                        captions.md      ← 派生视图：给课后复习
       ↓
 http://127.0.0.1:8765/   ← 本地字幕页
 ```
@@ -112,11 +113,22 @@ uv run chrometrans
 ```text
 transcripts/2026-09-23_1430/
 ├── captions.jsonl   # 每行一条 cue，追加写；崩了也只会丢最后一行
-└── captions.srt     # 由 JSONL 渲染，播放器可直接打开
+├── captions.srt     # 由 JSONL 渲染，播放器可直接打开
+└── captions.md      # 由 JSONL 渲染，课后复习用（带时间戳锚点）
 ```
 
-**JSONL 才是权威数据源。** SRT 随时可以只凭 JSONL 重新生成；
-`.srt` 被播放器占用时会自动改写到 `captions.next.srt`，不会阻塞录制。
+**JSONL 才是权威数据源。** SRT 与 Markdown 都随时可以只凭 JSONL 重新生成；
+文件被播放器占用时会自动改写到 `captions.next.<后缀>`，不会阻塞录制。
+
+两个派生视图各自独立渲染、各自独立兜错：其中一个写不进去，另一个照常产出。
+
+`captions.md` 长这样 —— 时间戳是对回视频进度的锚点，原文在上、译文在下：
+
+```markdown
+**00:01:05** Now we can start writing some C code.
+
+现在我们可以开始写一些 C 代码了。
+```
 
 ## 首次运行
 
@@ -170,3 +182,7 @@ uv run pytest -m integration   # 需要真实进程与音频设备的集成测�
 
 - 规格：`docs/superpowers/specs/2026-09-22-live-caption-pipeline-design.md`
 - 实现计划：`docs/superpowers/plans/2026-09-22-live-caption-pipeline.md`
+
+## 许可证
+
+MIT，见 [LICENSE](LICENSE)。
