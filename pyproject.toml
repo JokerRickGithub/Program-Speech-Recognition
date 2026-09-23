@@ -17,6 +17,7 @@ dependencies = [
     "fastapi>=0.141.1",
     "uvicorn[standard]>=0.53.0",
     "websockets>=17.1",
+    "pyside6",
 ]
 
 [project.scripts]
@@ -34,5 +35,8 @@ dev = ["pytest>=8.0"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-m 'not integration'"
-markers = ["integration: 需要真实音频设备与 Chrome 在播放"]
+addopts = "-m 'not integration and not gui'"
+markers = [
+    "integration: 需要真实音频设备与 Chrome 在播放",
+    "gui: 需要 Qt 事件循环（用 offscreen 平台跑）",
+]
