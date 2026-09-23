@@ -307,3 +307,37 @@ def test_writer_close_failure_does_not_kill_the_teardown(tmp_path, monkeypatch):
     assert "stopped" in states, "close() 失败也必须发 stopped 事件"
     session = next(tmp_path.iterdir())
     assert (session / "captions.srt").exists(), "close() 失败也必须照常重渲 SRT"
+
+
+def test_loading_status_is_emitted_before_the_model_is_loaded(tmp_path):
+    """模型加载要几十秒。GUI 上不发这条事件，窗口看起来就是卡死的。"""
+    events = []
+    order = []
+
+    class RecordingAsr:
+        def load(self):
+            order.append("load")
+
+        def transcribe(self, segment):
+            return None
+
+    class RecordingTranslator:
+        async def translate(self, texts, src, tgt):
+            return [None] * len(texts)
+
+    def emit(event):
+        events.append(event)
+        if event["event"] == "status":
+            order.append(event["data"]["state"])
+
+    cfg = Config(output=OutputConfig(output_root=tmp_path))
+    engine = Engine(cfg=cfg, on_event=emit, asr=RecordingAsr(),
+                    translator=RecordingTranslator(), segments=())
+    engine.run()
+
+    loading = [e for e in events
+               if e["event"] == "status" and e["data"]["state"] == "loading"]
+    assert loading, "必须发出 loading 状态"
+    assert "large-v3-turbo" in loading[0]["data"]["message"], "要说是哪个模型"
+    assert order == ["loading", "load", "running", "stopped"], \
+        "loading 必须在 asr.load() 之前发出，否则用户看到的是几十秒卡死"

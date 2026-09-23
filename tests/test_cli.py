@@ -57,6 +57,8 @@ def test_print_event_reports_every_status_transition(capsys):
         "state": "warning", "message": "启动自检未通过（读到的是静音）"}})
     print_event({"event": "status", "data": {
         "state": "degraded", "message": "已降级到系统级捕获：会混入背景音乐"}})
+    print_event({"event": "status", "data": {
+        "state": "loading", "message": "正在加载模型 large-v3-turbo…"}})
     print_event({"event": "status", "data": {"state": "stopped"}})
 
     err = capsys.readouterr().err
@@ -64,6 +66,7 @@ def test_print_event_reports_every_status_transition(capsys):
     assert "PID 4321" in err, "第二种 running 事件要报按进程捕获的 PID"
     assert "启动自检未通过" in err, "warning 以前是静默的"
     assert "已降级到系统级捕获" in err
+    assert "正在加载模型" in err, "模型加载期间的几十秒不能是静默的"
     assert "已停止" in err
 
 

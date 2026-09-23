@@ -132,6 +132,8 @@ def print_event(event: dict) -> None:
             print(f"— 运行中 · {data['model']} · {data['device']}", file=sys.stderr)
         else:
             print(f"— 运行中 · 按进程捕获（PID {data.get('pid')}）", file=sys.stderr)
+    elif state == "loading":
+        print(f"— {data.get('message')}", file=sys.stderr)
     elif state in ("degraded", "warning"):
         print(f"! {data.get('message')}", file=sys.stderr)
     elif state == "stopped":

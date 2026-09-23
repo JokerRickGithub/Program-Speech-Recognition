@@ -62,6 +62,9 @@ function setStatus(data) {
         ? `运行中 · ${data.model} · ${data.device}`
         : `运行中 · 按进程捕获（PID ${data.pid}）`;
       break;
+    case 'loading':
+      status.textContent = data.message;
+      break;
     case 'degraded':
       status.textContent = `⚠ ${data.message}`;
       status.classList.add('degraded');
