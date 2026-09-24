@@ -1114,7 +1114,37 @@ def test_cli_requires_out_everywhere():
         parse_args(["record", "--audio", "a.mp3", "--language", "zh"])
     with pytest.raises(SystemExit):
         parse_args(["recommend", "--records", "r.json"])
+
+
+def test_rows_skip_blank_segments_so_the_matrix_matches_production():
+    """C41：空白段不得进矩阵 —— 误差方向恰好是最不能错的那一侧。
+
+    生产里空白段两个方向都不可见（幻觉的因 `if text:` 不进 dropped，非幻觉的
+    直接 continue）。若这里给它建行，「非幻觉但空白」会被 confusion 记成
+    `true_speech`，而生产其实什么都没出 —— 标定会把静默丢掉的那段算成「留住了」，
+    让**误杀看起来更少**。C41 只认这一条硬判据，所以口径必须与生产一致。
+    """
+    from chrometrans.calibrate import rows_from
+
+    class FakeSeg:
+        def __init__(self, text, nsp=0.05, alp=-0.2, cr=1.2):
+            self.start, self.end = 0.0, 1.0
+            self.text = text
+            self.no_speech_prob, self.avg_logprob = nsp, alp
+            self.compression_ratio = cr
+
+    segment = Segment(3, 10.0, 14.0, np.zeros(16000, dtype=np.float32))
+    rows = rows_from(segment, [FakeSeg("人说话"),
+                               FakeSeg("   "),
+                               FakeSeg("", nsp=0.95, alp=-1.8)])
+
+    assert [r.text for r in rows] == ["人说话"]
+    assert rows[0].index == 3, "index 是切句器段落的，不是 Whisper 的内部序号"
+    assert (rows[0].start, rows[0].end) == (10.0, 11.0), "时间是绝对时间"
 ```
+
+（`Segment` 若未在文件头导入，在这个测试里就地 `from chrometrans.audio.segmenter
+import Segment` —— 与上一条测试同一写法。）
 
 - [ ] **Step 2: 跑测试确认它失败**
 
@@ -1161,6 +1191,33 @@ def segments_for(audio: np.ndarray, window_s: float | None = None,
     return out
 
 
+def rows_from(segment: Segment, whisper_segments) -> list[Row]:
+    """一个切句器段落的 Whisper 输出 → `Row` 列表。**空白段一律不进。**
+
+    生产里空白段两个方向都不可见（`whisper_engine.py`：幻觉的因 `if text:` 不进
+    `dropped`，非幻觉的直接 `continue`）。这里若不跳过，「非幻觉但空白」会被
+    `confusion` 记成 `true_speech`，而生产其实什么都没出 —— 标定会把静默丢掉的
+    那段算成「留住了」，误差方向是让**误杀看起来更少**。C41 只认这条硬判据，
+    所以口径必须与生产一致。
+
+    单独成函数是为了能在不加载模型的前提下把这条口径钉在测试里。
+    """
+    rows: list[Row] = []
+    for seg in whisper_segments:
+        text = seg.text.strip()
+        if not text:
+            continue
+        rows.append(Row(
+            index=segment.index,
+            start=segment.start + seg.start,
+            end=segment.start + seg.end,
+            text=text,
+            no_speech_prob=seg.no_speech_prob,
+            avg_logprob=seg.avg_logprob,
+            compression_ratio=seg.compression_ratio))
+    return rows
+
+
 def record(audio_path: Path, language: str,
            initial_prompt: str | None = None,
            window_s: float | None = None,
@@ -1187,15 +1244,7 @@ def record(audio_path: Path, language: str,
     for segment in segments_for(audio, window_s):
         whisper_segments, _info = model.transcribe(segment.audio,
                                                    **transcribe_kwargs(asr))
-        for seg in whisper_segments:
-            rows.append(Row(
-                index=segment.index,
-                start=segment.start + seg.start,
-                end=segment.start + seg.end,
-                text=seg.text.strip(),
-                no_speech_prob=seg.no_speech_prob,
-                avg_logprob=seg.avg_logprob,
-                compression_ratio=seg.compression_ratio))
+        rows.extend(rows_from(segment, whisper_segments))
     return rows
 
 
@@ -1276,10 +1325,13 @@ def _render_recommendation(meta: dict, rows: list[Row],
     """
     speech = sum(1 for r in rows if r.label == SPEECH)
     ratio, trad_hits = traditional_ratio([r.text for r in rows])
-    if rec.baseline_confusion.false_drop and rec.chosen == rec.baseline:
-        verdict = ("**照抄基准值**：基准在这批素材上的误杀已为 0，"
-                   "而漏放侧没有可用负样本，无从判断收紧是否划算（C41）。")
-    elif rec.chosen == rec.baseline:
+    # 只分两支，且**照抄 rec.note**：早先这里还有一支写死文案的分支，条件是
+    # `rec.baseline_confusion.false_drop and rec.chosen == rec.baseline`，
+    # 而文字说的是「误杀已为 0」—— 条件（误杀 > 0）与文字正好相反。它自称要覆盖的
+    # 情形（误杀 = 0、无负样本）够不到那里，真进得来的情形（网格救不回来、退回基准）
+    # 反倒被灌了一句「误杀已为 0」，把没消除的误杀说成消除了，正是 C41 要拦的。
+    # 结论照实由 recommend 写进 note，这里不转述。
+    if rec.chosen == rec.baseline:
         verdict = "**照抄基准值**：" + rec.note
     else:
         verdict = f"**采用推荐值**：{rec.note}"
