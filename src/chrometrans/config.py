@@ -75,6 +75,8 @@ class LanguageProfile:
 # 已判定的 nonspeech（见下）就是活证据 —— 漏放率 100%。误杀率 0 是硬判据（C41），
 # 它满足；但它的满足有一部分是**空转的**，别把「没误杀」读成「过滤有效」。
 # 修这三个轴是独立立项，不在本单元内（spec §6 之外）。
+# 若有人真的修好了这三条轴，**删掉本段注释** —— 它描述的是当前实测状态，
+# 修好之后继续留着就从「说明」变成了「谎言」。
 LANGUAGES: dict[str, LanguageProfile] = {
     "en": LanguageProfile(
         code="en",
@@ -88,6 +90,9 @@ LANGUAGES: dict[str, LanguageProfile] = {
         #
         # 刻意不重新标定（C40）：把一个建立在评测集上的默认值，换成建立在一个人
         # 8 分钟录音上的自定义值，是降级而非升级。
+        #
+        # 注意 LANGUAGES 上方那段实测结论对 en 同样成立：这三条轴在本项目这套栈上
+        # 一条都够不着。不重新标定的理由与它是两回事，两条并存，不冲突。
         no_speech_prob_threshold=0.6,
         avg_logprob_threshold=-1.0,
         compression_ratio_threshold=2.4,
@@ -108,7 +113,8 @@ LANGUAGES: dict[str, LanguageProfile] = {
         compression_ratio_threshold=2.4,
         calibrated_on="docs/superpowers/calibration/2026-09-24-ru.md"
                       "（sample/俄语音频.MP3，38 段切句器段落，44 行 Whisper 输出"
-                      "——6 段各被拆成两行；负样本为空，实测后沿用上游默认值）",
+                      "——6 段各被拆成两行；负样本为空，实测后沿用上游默认值"
+                      "。44 行的真值标注由 AI 助手依用户明确委托判定）",
     ),
     "zh": LanguageProfile(
         code="zh",
@@ -127,7 +133,8 @@ LANGUAGES: dict[str, LanguageProfile] = {
         compression_ratio_threshold=2.4,
         calibrated_on="docs/superpowers/calibration/2026-09-24-zh.md"
                       "（sample/中文音频.mp3，59 段切句器段落，59 行 Whisper 输出；"
-                      "1 条 nonspeech 未被拦住）",
+                      "1 条 nonspeech 未被拦住。59 行经用户过目，"
+                      "其中 index=20 由 AI 助手判定）",
     ),
 }
 
