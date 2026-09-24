@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from datetime import datetime
 from pathlib import Path
 from typing import Callable, Iterable
@@ -31,6 +32,7 @@ class Engine:
         self._segments = segments
         self._segment_iter_factory = segment_iter_factory
         self._running = False
+        self._dropped: list[dict] = []
 
     # ---- 对外 ----
 
@@ -68,8 +70,7 @@ class Engine:
                 result = self._transcribe(segment)
                 if result is None:
                     continue
-                # 本任务只解出识别结果；result.dropped 由 Task 5 变成事件与
-                # dropped.jsonl。在此之前「丢弃不发声」是既有状态。
+                self._report_drops(result.dropped)
                 utterance = result.utterance
                 if utterance is None:
                     continue
@@ -117,6 +118,24 @@ class Engine:
                 "message": f"第 {segment.index} 段识别失败：{exc}"}})
             return None
 
+    def _report_drops(self, dropped) -> None:
+        """C45：丢弃必须可见。
+
+        静默 continue 有两个后果：与本项目对静默失败的一贯取向矛盾（降级要播报、
+        启动自检读到静音要报警），而且「先按默认值、试用后再调」这条约定会失效
+        —— 偏严的误杀用户永远发现不了，只会觉得字幕时有时无。
+        """
+        for item in dropped:
+            record = {"text": item.text,
+                      "no_speech_prob": item.no_speech_prob,
+                      "avg_logprob": item.avg_logprob,
+                      "compression_ratio": item.compression_ratio}
+            self._dropped.append(record)
+            self._emit({"event": "status", "data": {
+                "state": "dropped",
+                "message": f"丢弃疑似幻觉：{_preview(item.text)}",
+                **record}})
+
     def _translate(self, text: str) -> str | None:
         try:
             results = asyncio.run(self._translator.translate(
@@ -138,8 +157,20 @@ class Engine:
         逐视图独立兜错：一个视图渲不出来（文件被占用、数据畸形）不能让另一个
         视图也缺一块 —— 两者的失败原因毫不相干，没理由互相连累。
         """
+        self._render_drops(session)
         self._render_one(session, "captions.srt", render_srt, writer)
         self._render_one(session, "captions.md", render_markdown, writer)
+
+    def _render_drops(self, session: Path) -> None:
+        """把被丢弃的段写成 dropped.jsonl。
+
+        与另外两个视图同规矩：逐视图独立兜错，失败不阻塞流水线。
+        """
+        if not self._dropped:
+            return
+        body = "".join(json.dumps(r, ensure_ascii=False) + "\n"
+                       for r in self._dropped)
+        self._write_view(session, "dropped.jsonl", body)
 
     def _render_srt(self, session: Path, writer: JsonlWriter) -> None:
         """只渲 SRT。
@@ -154,13 +185,23 @@ class Engine:
         try:
             # read_all() 放在 try 里面：JSONL 读不出来（被独占、文件损坏）同样
             # 不能逃出去 —— 这条路径跑在 run() 的 finally 里。
-            written = write_with_fallback(
-                session / filename, renderer(writer.read_all()),
-                retries=self._cfg.output.replace_retries,
-                base_delay=self._cfg.output.replace_base_delay_s)
+            body = renderer(writer.read_all())
         except Exception as exc:
             # 重渲绝不能抛：它跑在 run() 的 finally 里，抛出去会吞掉
             # stopped 事件并让整个捕获进程崩掉（R22）。JSONL 完好，随时可重渲。
+            self._emit({"event": "error", "data": {
+                "message": f"{filename} 重渲失败，本次跳过（JSONL 完好，可随时重渲）：{exc}"}})
+            return
+        self._write_view(session, filename, body)
+
+    def _write_view(self, session: Path, filename: str, body: str) -> None:
+        """原子写一个派生文件，失败只报不抛。"""
+        try:
+            written = write_with_fallback(
+                session / filename, body,
+                retries=self._cfg.output.replace_retries,
+                base_delay=self._cfg.output.replace_base_delay_s)
+        except Exception as exc:
             self._emit({"event": "error", "data": {
                 "message": f"{filename} 重渲失败，本次跳过（JSONL 完好，可随时重渲）：{exc}"}})
             return
@@ -170,3 +211,11 @@ class Engine:
         elif written.name != filename:
             self._emit({"event": "error", "data": {
                 "message": f"{filename} 被占用，已改写到 {written.name}"}})
+
+
+def _preview(text: str, limit: int = 200) -> str:
+    """事件里的文本要截断：幻觉可以长到整段，而事件要走 WebSocket。
+
+    落盘的 `dropped.jsonl` 不截断 —— 那是给人逐条看的。
+    """
+    return text if len(text) <= limit else text[:limit] + "…"

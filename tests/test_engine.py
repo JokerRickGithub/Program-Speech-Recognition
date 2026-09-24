@@ -346,3 +346,97 @@ def test_loading_status_is_emitted_before_the_model_is_loaded(tmp_path):
     assert "large-v3-turbo" in loading[0]["data"]["message"], "要说是哪个模型"
     assert order == ["loading", "load", "running", "stopped"], \
         "loading 必须在 asr.load() 之前发出，否则用户看到的是几十秒卡死"
+
+
+def test_dropped_segments_are_reported_with_their_text(tmp_path):
+    """C45：丢弃必须可见，且要带着文本。
+
+    只说「丢了 1 段」用户判断不了那是垃圾还是真话 —— 而判断正是这个事件的全部
+    目的。
+    """
+    from chrometrans.asr.whisper_engine import Dropped, TranscribeResult, Utterance
+
+    events = []
+
+    class DroppingAsr:
+        def load(self): pass
+
+        def transcribe(self, seg):
+            return TranscribeResult(
+                utterance=Utterance(start=seg.start, end=seg.end, text="留下的话"),
+                dropped=(Dropped(text="编出来的话", no_speech_prob=0.95,
+                                 avg_logprob=-1.8, compression_ratio=1.1),))
+
+    eng = Engine(cfg=Config(output=OutputConfig(output_root=tmp_path)),
+                 on_event=events.append, asr=DroppingAsr(),
+                 translator=StubTranslator(),
+                 segments=[Segment(1, 0.0, 2.0, np.zeros(32000, dtype=np.float32))])
+    eng.run()
+
+    drops = [e["data"] for e in events
+             if e["event"] == "status" and e["data"].get("state") == "dropped"]
+    assert len(drops) == 1
+    assert "编出来的话" in drops[0]["text"]
+    assert drops[0]["compression_ratio"] == 1.1, "三个统计量要一并带上"
+    assert [e["data"]["source"] for e in events if e["event"] == "cue"] == ["留下的话"]
+
+
+def test_dropped_segments_land_in_dropped_jsonl(tmp_path):
+    """事件是瞬时的（字幕窗、网页的状态栏都会被下一句顶走），而 C45 要支撑的
+    「试用完再回来调阈值」是事后行为 —— 只在事件里报等于没报。"""
+    import json as jsonlib
+
+    from chrometrans.asr.whisper_engine import Dropped, TranscribeResult
+
+    class AllDroppedAsr:
+        def load(self): pass
+
+        def transcribe(self, seg):
+            return TranscribeResult(utterance=None, dropped=(
+                Dropped(text="编的", no_speech_prob=0.9, avg_logprob=-1.7,
+                        compression_ratio=1.2),))
+
+    eng = Engine(cfg=Config(output=OutputConfig(output_root=tmp_path)),
+                 on_event=lambda e: None, asr=AllDroppedAsr(),
+                 translator=StubTranslator(),
+                 segments=[Segment(1, 0.0, 2.0, np.zeros(32000, dtype=np.float32))])
+    eng.run()
+
+    session = next(tmp_path.iterdir())
+    lines = (session / "dropped.jsonl").read_text(encoding="utf-8").splitlines()
+    assert [jsonlib.loads(l)["text"] for l in lines] == ["编的"]
+
+
+def test_a_clean_session_writes_no_dropped_file(tmp_path):
+    """没丢东西就不该多一个空文件 —— 空文件会被读成「丢了但没记下来」。"""
+    eng, _ = _engine(tmp_path, StubTranslator(),
+                     [Segment(1, 0.0, 2.0, np.zeros(32000, dtype=np.float32))])
+    eng.run()
+
+    assert not (next(tmp_path.iterdir()) / "dropped.jsonl").exists()
+
+
+def test_dropped_text_in_the_event_is_bounded(tmp_path):
+    """幻觉可以长到整段。事件要过 WebSocket，不该被一条文本撑爆。"""
+    from chrometrans.asr.whisper_engine import Dropped, TranscribeResult
+
+    long_text = "啊" * 5000
+    events = []
+
+    class LongDropAsr:
+        def load(self): pass
+
+        def transcribe(self, seg):
+            return TranscribeResult(utterance=None, dropped=(
+                Dropped(text=long_text, no_speech_prob=0.9, avg_logprob=-1.7,
+                        compression_ratio=1.2),))
+
+    eng = Engine(cfg=Config(output=OutputConfig(output_root=tmp_path)),
+                 on_event=events.append, asr=LongDropAsr(),
+                 translator=StubTranslator(),
+                 segments=[Segment(1, 0.0, 2.0, np.zeros(32000, dtype=np.float32))])
+    eng.run()
+
+    drop = [e["data"] for e in events if e["data"].get("state") == "dropped"][0]
+    assert len(drop["message"]) < 500, "事件里的文本要截断"
+    assert len(drop["text"]) == 5000, "落盘的原文不截断"
