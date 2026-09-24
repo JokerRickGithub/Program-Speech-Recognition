@@ -23,6 +23,7 @@ dependencies = [
 [project.scripts]
 chrometrans = "chrometrans.cli:main"
 chrometrans-gui = "chrometrans.gui.app:main"
+chrometrans-calibrate = "chrometrans.calibrate:main"
 
 [build-system]
 requires = ["hatchling"]

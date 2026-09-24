@@ -184,3 +184,80 @@ def test_traditional_markers_are_absent_from_simplified_text():
 
 def test_traditional_ratio_of_nothing_is_zero():
     assert traditional_ratio([]) == (0.0, [])
+
+
+def test_segments_for_slices_fixed_windows_when_asked(monkeypatch):
+    """链路 2：绕过切句器直接切固定长度窗口。
+
+    这是有意的一条「不存在的路径」——它把「Whisper 在这些音频上会输出什么」
+    与「切句器放不放它过去」分开，混在一起时看不出是哪一环出的问题。
+    """
+    from chrometrans.calibrate import segments_for
+
+    audio = np.zeros(16000 * 25, dtype=np.float32)
+    segs = segments_for(audio, window_s=10.0)
+
+    assert [round(s.start, 3) for s in segs] == [0.0, 10.0, 20.0]
+    assert all(s.audio.size <= 16000 * 10 for s in segs)
+
+
+def test_segments_for_goes_through_the_real_segmenter(monkeypatch):
+    """不给 window_s 时必须走生产切句器 —— 标定的就是线上那件事。"""
+    import chrometrans.calibrate as cal
+    from chrometrans.audio.segmenter import Segment
+
+    called = {}
+
+    class FakeSegmenter:
+        def __init__(self, cfg=None):
+            called["built"] = True
+
+        def feed(self, chunk):
+            return [Segment(1, 0.0, 1.0, np.zeros(16000, dtype=np.float32))]
+
+        def flush(self):
+            return []
+
+    monkeypatch.setattr(cal, "Segmenter", FakeSegmenter)
+    segs = cal.segments_for(np.zeros(16000, dtype=np.float32))
+
+    assert called["built"]
+    assert len(segs) == 1
+
+
+def test_cli_requires_out_everywhere():
+    """中文走 stdout 在 Windows 的 Bash 工具里是乱码。要人看的结果一律落文件。"""
+    from chrometrans.calibrate import parse_args
+
+    with pytest.raises(SystemExit):
+        parse_args(["record", "--audio", "a.mp3", "--language", "zh"])
+    with pytest.raises(SystemExit):
+        parse_args(["recommend", "--records", "r.json"])
+
+
+def test_rows_skip_blank_segments_so_the_matrix_matches_production():
+    """C41：空白段不得进矩阵 —— 误差方向恰好是最不能错的那一侧。
+
+    生产里空白段两个方向都不可见（幻觉的因 `if text:` 不进 dropped，非幻觉的
+    直接 continue）。若这里给它建行，「非幻觉但空白」会被 confusion 记成
+    `true_speech`，而生产其实什么都没出 —— 标定会把静默丢掉的那段算成「留住了」，
+    让**误杀看起来更少**。C41 只认这一条硬判据，所以口径必须与生产一致。
+    """
+    from chrometrans.audio.segmenter import Segment
+    from chrometrans.calibrate import rows_from
+
+    class FakeSeg:
+        def __init__(self, text, nsp=0.05, alp=-0.2, cr=1.2):
+            self.start, self.end = 0.0, 1.0
+            self.text = text
+            self.no_speech_prob, self.avg_logprob = nsp, alp
+            self.compression_ratio = cr
+
+    segment = Segment(3, 10.0, 14.0, np.zeros(16000, dtype=np.float32))
+    rows = rows_from(segment, [FakeSeg("人说话"),
+                               FakeSeg("   "),
+                               FakeSeg("", nsp=0.95, alp=-1.8)])
+
+    assert [r.text for r in rows] == ["人说话"]
+    assert rows[0].index == 3, "index 是切句器段落的，不是 Whisper 的内部序号"
+    assert (rows[0].start, rows[0].end) == (10.0, 11.0), "时间是绝对时间"

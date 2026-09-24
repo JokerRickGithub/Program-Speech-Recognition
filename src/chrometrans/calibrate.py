@@ -12,9 +12,11 @@
 """
 from __future__ import annotations
 
+import argparse
 import json
 import math
 from dataclasses import asdict, dataclass
+from datetime import datetime
 from pathlib import Path
 
 import numpy as np
@@ -245,3 +247,272 @@ def save_rows(path: Path, meta: dict, rows: list[Row]) -> None:
 def load_rows(path: Path) -> tuple[dict, list[Row]]:
     raw = json.loads(Path(path).read_text(encoding="utf-8"))
     return raw.get("meta", {}), [Row.from_dict(d) for d in raw["rows"]]
+
+
+# ---- 第 3 块：跑 Whisper（需要 GPU 与样本文件） ----
+
+# 喂给切句器的块大小。10ms 量级与生产管道一致，别一次灌整段 ——
+# 切句器的内存回收是按块推进的。
+FEED_BLOCK = 16000
+
+
+def segments_for(audio: np.ndarray, window_s: float | None = None,
+                 cfg=None) -> list[Segment]:
+    """把整段音频切成待识别的段。
+
+    window_s 给定时**绕过切句器**直接硬切固定长度窗口 —— 那是标定的链路 2，
+    用来把「Whisper 输出什么」与「切句器放不放它过去」分开观察。
+    """
+    cfg = cfg or SegmenterConfig()
+    rate = cfg.sample_rate
+
+    if window_s is not None:
+        step = int(round(window_s * rate))
+        total_s = len(audio) / rate
+        return [Segment(index=i + 1, start=i * window_s,
+                        end=min((i + 1) * window_s, total_s),
+                        audio=normalize(audio[i * step:(i + 1) * step],
+                                        cfg.norm_target_rms, cfg.norm_max_gain,
+                                        cfg.norm_floor_rms))
+                for i in range(math.ceil(len(audio) / step))]
+
+    segmenter = Segmenter(cfg)
+    out: list[Segment] = []
+    for i in range(0, len(audio), FEED_BLOCK):
+        out += segmenter.feed(audio[i:i + FEED_BLOCK])
+    out += segmenter.flush()
+    return out
+
+
+def rows_from(segment: Segment, whisper_segments) -> list[Row]:
+    """一个切句器段落的 Whisper 输出 → `Row` 列表。**空白段一律不进。**
+
+    生产里空白段两个方向都不可见（`whisper_engine.py`：幻觉的因 `if text:` 不进
+    `dropped`，非幻觉的直接 `continue`）。这里若不跳过，「非幻觉但空白」会被
+    `confusion` 记成 `true_speech`，而生产其实什么都没出 —— 标定会把静默丢掉的
+    那段算成「留住了」，误差方向是让**误杀看起来更少**。C41 只认这条硬判据，
+    所以口径必须与生产一致。
+
+    单独成函数是为了能在不加载模型的前提下把这条口径钉在测试里。
+    """
+    rows: list[Row] = []
+    for seg in whisper_segments:
+        text = seg.text.strip()
+        if not text:
+            continue
+        rows.append(Row(
+            index=segment.index,
+            start=segment.start + seg.start,
+            end=segment.start + seg.end,
+            text=text,
+            no_speech_prob=seg.no_speech_prob,
+            avg_logprob=seg.avg_logprob,
+            compression_ratio=seg.compression_ratio))
+    return rows
+
+
+def record(audio_path: Path, language: str,
+           initial_prompt: str | None = None,
+           window_s: float | None = None,
+           model_name: str = "large-v3-turbo", device: str = "cuda",
+           compute_type: str = "int8_float16") -> list[Row]:
+    """跑真实切句器 + Whisper，逐段记录三个统计量与文本。
+
+    解码参数来自 `transcribe_kwargs`，与生产完全一致（spec §5.5）——
+    参数不一致时，标出来的是给另一个配置调的阈值。
+    不能用 `WhisperEngine.transcribe`：它会把幻觉段就地过滤掉，而这里要的正是
+    那些段本身。
+    """
+    from faster_whisper import WhisperModel
+    from faster_whisper.audio import decode_audio
+
+    from chrometrans.asr.whisper_engine import prepare_cuda_paths
+
+    prepare_cuda_paths()
+    audio = decode_audio(str(audio_path), sampling_rate=SAMPLE_RATE)
+    asr = AsrConfig(language=language, initial_prompt=initial_prompt)
+    model = WhisperModel(model_name, device=device, compute_type=compute_type)
+
+    rows: list[Row] = []
+    for segment in segments_for(audio, window_s):
+        whisper_segments, _info = model.transcribe(segment.audio,
+                                                   **transcribe_kwargs(asr))
+        rows.extend(rows_from(segment, whisper_segments))
+    return rows
+
+
+@dataclass(frozen=True)
+class GateRow:
+    """一道闸门对一种素材的放行情况。"""
+    label: str
+    seconds: float
+    segments: int
+    speech_seconds: float
+
+
+def gate_report(clips: list[tuple[str, np.ndarray]]) -> list[GateRow]:
+    """对照：合成噪声 / 数字静音能不能过切句器（C42 的现场证据）。
+
+    这一段存在的意义是让 spec §6.1 那条实测结论**可复跑**：闸门失效时，
+    它会在报告里直接显形，而不是等谁想起来再写一个探针。
+    """
+    rows = []
+    for label, audio in clips:
+        segs = segments_for(audio)
+        rows.append(GateRow(
+            label=label, seconds=len(audio) / SAMPLE_RATE,
+            segments=len(segs),
+            speech_seconds=sum(s.end - s.start for s in segs)))
+    return rows
+
+
+# ---- CLI ----
+
+def parse_args(argv: list[str] | None = None):
+    parser = argparse.ArgumentParser(
+        prog="chrometrans-calibrate",
+        description="幻觉过滤阈值标定（开发者工具，需要 GPU）")
+    sub = parser.add_subparsers(dest="cmd", required=True)
+
+    r = sub.add_parser("record", help="跑切句器 + Whisper，逐段记录统计量")
+    r.add_argument("--audio", type=Path, required=True)
+    r.add_argument("--language", required=True)
+    r.add_argument("--initial-prompt", default=None)
+    r.add_argument("--window-s", type=float, default=None,
+                   help="给定则绕过切句器，直接切固定长度窗口（链路 2）")
+    r.add_argument("--model", default="large-v3-turbo")
+    r.add_argument("--device", default="cuda")
+    r.add_argument("--compute-type", default="int8_float16")
+    r.add_argument("--out", type=Path, required=True)
+
+    c = sub.add_parser("recommend", help="由带标注的记录算混淆矩阵与推荐阈值")
+    c.add_argument("--records", type=Path, required=True)
+    c.add_argument("--out", type=Path, required=True)
+
+    g = sub.add_parser("gate", help="对照：合成噪声 / 真实底噪能否过切句器（C42）")
+    g.add_argument("--audio", type=Path, action="append", default=[])
+    g.add_argument("--seconds", type=float, default=20.0)
+    g.add_argument("--out", type=Path, required=True)
+    return parser.parse_args(argv)
+
+
+def _fmt_thresholds(t: Thresholds) -> str:
+    return (f"no_speech_prob={t.no_speech_prob} "
+            f"avg_logprob={t.avg_logprob} "
+            f"compression_ratio={t.compression_ratio}")
+
+
+def _render_recommendation(meta: dict, rows: list[Row],
+                           rec: Recommendation) -> str:
+    """把推荐写成一份可直接提交的标定报告。
+
+    报告是 `calibrated_on` 指向的东西（C40），所以它必须自带材料标识与推导
+    过程 —— 只留一个数字，半年后没人说得清那是怎么来的。
+    """
+    speech = sum(1 for r in rows if r.label == SPEECH)
+    ratio, trad_hits = traditional_ratio([r.text for r in rows])
+    # 只分两支，且**照抄 rec.note**：早先这里还有一支写死文案的分支，条件是
+    # `rec.baseline_confusion.false_drop and rec.chosen == rec.baseline`，
+    # 而文字说的是「误杀已为 0」—— 条件（误杀 > 0）与文字正好相反。它自称要覆盖的
+    # 情形（误杀 = 0、无负样本）够不到那里，真进得来的情形（网格救不回来、退回基准）
+    # 反倒被灌了一句「误杀已为 0」，把没消除的误杀说成消除了，正是 C41 要拦的。
+    # 结论照实由 recommend 写进 note，这里不转述。
+    if rec.chosen == rec.baseline:
+        verdict = "**照抄基准值**：" + rec.note
+    else:
+        verdict = f"**采用推荐值**：{rec.note}"
+
+    lines = [
+        f"# {meta.get('language')} 幻觉阈值标定报告",
+        "",
+        f"- 日期：{meta.get('date', '')}",
+        f"- 素材：`{meta.get('audio')}`"
+        + (f"（固定 {meta['window_s']}s 窗口，绕过切句器）" if meta.get("window_s")
+           else "（走生产切句器）"),
+        f"- 模型：`{meta.get('model')}` · language=`{meta.get('language')}`"
+        f" · initial_prompt=`{meta.get('initial_prompt')}`",
+        f"- 正样本：{speech} 条 / 负样本：{len(rows) - speech} 条",
+        "",
+        "## 混淆矩阵",
+        "",
+        "| 阈值 | 真语音留下 | **误杀** | 漏放 | 非语音拦下 | 误杀率 | 漏放率 |",
+        "|---|---|---|---|---|---|---|",
+    ]
+    for name, t, c in (("基准", rec.baseline, rec.baseline_confusion),
+                       ("推荐", rec.chosen, rec.chosen_confusion)):
+        rate = "测不出来" if c.false_pass_rate is None else f"{c.false_pass_rate:.1%}"
+        lines.append(f"| {name} `{_fmt_thresholds(t)}` | {c.true_speech} | "
+                     f"{c.false_drop} | {c.false_pass} | {c.true_nonspeech} | "
+                     f"{c.false_drop_rate:.1%} | {rate} |")
+
+    lines += ["", "## 结论", "", verdict, "", "## 被丢弃的条目", ""]
+    dropped = dropped_rows(rows, rec.chosen)
+    if not dropped:
+        lines.append("（无）")
+    for r in dropped:
+        lines.append(f"- `[{r.start:.1f}s]` nsp={r.no_speech_prob:.3f} "
+                     f"alp={r.avg_logprob:.3f} cr={r.compression_ratio:.3f} "
+                     f"label={r.label}：{r.text}")
+
+    lines += ["", "## 繁体残留率（C46）", "",
+              f"{ratio:.1%}（{len(trad_hits)} / {len(rows)} 条）"]
+    if ratio > 0:
+        lines += ["", "非零。按 C46 必须补确定性的繁→简转换，不得依赖网络翻译。", ""]
+        lines += [f"- {t}" for t in trad_hits[:20]]
+    else:
+        lines += ["", "为零，无需补转换（C46 只在非零时才要求）。"]
+    return "\n".join(lines) + "\n"
+
+
+def _render_gate(rows: list[GateRow]) -> str:
+    lines = ["| 素材 | 输入时长 | 切句器放行段数 | 放行语音时长 |",
+             "|---|---|---|---|"]
+    for r in rows:
+        lines.append(f"| {r.label} | {r.seconds:.1f}s | {r.segments} | "
+                     f"{r.speech_seconds:.1f}s |")
+    return "\n".join(lines) + "\n"
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(argv)
+    if args.cmd == "record":
+        rows = record(args.audio, args.language,
+                      initial_prompt=args.initial_prompt,
+                      window_s=args.window_s, model_name=args.model,
+                      device=args.device, compute_type=args.compute_type)
+        save_rows(args.out, {
+            "audio": str(args.audio), "language": args.language,
+            "initial_prompt": args.initial_prompt, "window_s": args.window_s,
+            "model": args.model,
+            "date": datetime.now().strftime("%Y-%m-%d"),
+        }, rows)
+        print(f"写出 {len(rows)} 条记录 → {args.out}")
+        return 0
+
+    if args.cmd == "recommend":
+        meta, rows = load_rows(args.records)
+        rec = recommend(rows)
+        args.out.parent.mkdir(parents=True, exist_ok=True)
+        args.out.write_text(_render_recommendation(meta, rows, rec),
+                            encoding="utf-8")
+        print(f"报告已写出 → {args.out}")
+        return 0
+
+    clips = [("数字静音", digital_silence(args.seconds)),
+             ("白噪声 -25 dBFS", synthetic_clip(args.seconds, -25.0, seed=1)),
+             ("白噪声 -35 dBFS", synthetic_clip(args.seconds, -35.0, seed=2))]
+    clips += [(f"真实素材 {p.name}", decode_for_gate(p)) for p in args.audio]
+    args.out.parent.mkdir(parents=True, exist_ok=True)
+    args.out.write_text(_render_gate(gate_report(clips)), encoding="utf-8")
+    print(f"对照表已写出 → {args.out}")
+    return 0
+
+
+def decode_for_gate(path: Path) -> np.ndarray:
+    from faster_whisper.audio import decode_audio
+
+    return decode_audio(str(path), sampling_rate=SAMPLE_RATE)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
