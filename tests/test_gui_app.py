@@ -268,3 +268,41 @@ def test_startup_path_runs_to_completion(qapp, tmp_path, monkeypatch):
         assert gui_app.main([]) == 0
     finally:
         timer.stop()
+
+
+def test_dropped_status_reaches_the_caption_window(qapp):
+    """C45 的最后一公里：事件产生在 engine 里，而用户看的是字幕窗。
+
+    断在这一行，前面所有用例照样全绿，而用户什么也看不到。
+    """
+    from chrometrans.gui.app import dispatch_status
+    from chrometrans.gui.caption_window import CaptionWindow
+    from chrometrans.gui.launcher import LauncherWindow
+
+    caption = CaptionWindow()
+    launcher = LauncherWindow()
+
+    dispatch_status({"state": "dropped", "message": "丢弃疑似幻觉：谢谢观看"},
+                    launcher=launcher, caption=caption)
+
+    assert "丢弃疑似幻觉：谢谢观看" in caption.toPlainText()
+    assert "丢弃疑似幻觉：谢谢观看" in launcher.status_text()
+    caption.close()
+    launcher.close()
+
+
+def test_ordinary_statuses_still_reach_the_launcher(qapp):
+    """回归：提到模块级不能把原有那五个状态接丢。"""
+    from chrometrans.gui.app import dispatch_status
+    from chrometrans.gui.caption_window import CaptionWindow
+    from chrometrans.gui.launcher import LauncherWindow
+
+    caption = CaptionWindow()
+    launcher = LauncherWindow()
+
+    dispatch_status({"state": "running", "model": "large-v3-turbo",
+                     "device": "cuda"}, launcher=launcher, caption=caption)
+
+    assert "large-v3-turbo" in launcher.status_text()
+    caption.close()
+    launcher.close()

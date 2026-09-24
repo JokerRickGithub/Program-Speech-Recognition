@@ -147,6 +147,42 @@ def should_start_page_server(*, no_server: bool, enabled: bool,
     return not no_server and enabled and not started
 
 
+def dispatch_status(data: dict, *, launcher, caption) -> None:
+    """把一条 status 事件分发给界面。
+
+    提到模块级只有一个理由：它是「事件 → 界面」的唯一映射，原来埋在 main() 的
+    闭包里，测试够不到 —— 新增的 dropped 分支尤其需要被测到（C45 要的就是它
+    可见）。
+    """
+    state = data.get("state")
+    if state == "loading":
+        launcher.set_status(data.get("message", "正在加载模型…"))
+    elif state == "running":
+        # 模式由会话级的 bilingual 派生（Task 6）。与 cli.print_event、
+        # index.html 的 setStatus() 逐字一致（C43）。键缺失时什么也不追加。
+        mode = data.get("bilingual")
+        suffix = "" if mode is None else (" · 翻译中" if mode else " · 不翻译")
+        if data.get("model"):
+            launcher.set_status(
+                f"运行中 · {data['model']} · {data['device']}{suffix}")
+        else:
+            launcher.set_status(
+                f"运行中 · 按进程捕获（PID {data.get('pid')}）{suffix}")
+    elif state == "warning":
+        launcher.set_status(data.get("message", ""))
+    elif state == "degraded":
+        # 原文照搬并标红 —— 降级意味着声音隔离已经失效（原规格 §5.1）
+        launcher.set_status(data.get("message", ""), degraded=True)
+    elif state == "dropped":
+        # C45：这张窗口是捕获期间唯一看得见的东西（启动器在 on_start 里已
+        # hide），所以提示要落在这里，而不是只写进启动器那个看不见的状态行。
+        message = data.get("message", "")
+        caption.add_notice(message)
+        launcher.set_status(message)
+    elif state == "stopped":
+        launcher.set_status("已停止")
+
+
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(sys.argv[1:] if argv is None else argv)
     cfg = load_config()
@@ -182,25 +218,6 @@ def main(argv: list[str] | None = None) -> int:
     def persist() -> None:
         save_settings(caption.current_settings())
 
-    def on_status(data: dict) -> None:
-        state = data.get("state")
-        if state == "loading":
-            launcher.set_status(data.get("message", "正在加载模型…"))
-        elif state == "running":
-            if data.get("model"):
-                launcher.set_status(
-                    f"运行中 · {data['model']} · {data['device']}")
-            else:
-                launcher.set_status(
-                    f"运行中 · 按进程捕获（PID {data.get('pid')}）")
-        elif state == "warning":
-            launcher.set_status(data.get("message", ""))
-        elif state == "degraded":
-            # 原文照搬并标红 —— 降级意味着声音隔离已经失效（原规格 §5.1）
-            launcher.set_status(data.get("message", ""), degraded=True)
-        elif state == "stopped":
-            launcher.set_status("已停止")
-
     def on_finished() -> None:
         launcher.set_capturing(False)
         launcher.show()
@@ -208,7 +225,8 @@ def main(argv: list[str] | None = None) -> int:
         # 规格 §5.6：停止后把两个窗口反过来 —— 置顶窗留着会让人以为还在捕获
         caption.hide()
 
-    relay.status.connect(on_status)
+    relay.status.connect(
+        lambda data: dispatch_status(data, launcher=launcher, caption=caption))
     relay.cue.connect(caption.add_cue)
     relay.error.connect(lambda m: launcher.set_status(m, degraded=True))
     controller.finished.connect(on_finished)
