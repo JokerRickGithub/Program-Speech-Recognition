@@ -130,8 +130,11 @@ def _tray_icon() -> QIcon:
 def _screens() -> list[tuple[int, int, int, int]]:
     from PySide6.QtGui import QGuiApplication
 
-    return [(g.x(), g.y(), g.width(), g.height())
-            for g in QGuiApplication.screens()]
+    out = []
+    for screen in QGuiApplication.screens():
+        r = screen.geometry()
+        out.append((r.x(), r.y(), r.width(), r.height()))
+    return out
 
 
 def should_start_page_server(*, no_server: bool, enabled: bool,
