@@ -95,7 +95,7 @@ def test_monolingual_body_has_no_target_block():
 
 
 def test_bilingual_header_is_unchanged():
-    """C43 的另一半：双语输出逐字不得变（回归既有格式）。"""
+    """C43 的另一半：双语表头逐字不得变（回归既有格式）。"""
     out = render([_cue(1, 0.0, 1.0)])
 
-    assert "en → zh-Hans" in out
+    assert "en → zh-Hans ｜ 1 条 ｜ 00:00:00 → 00:00:01" in out

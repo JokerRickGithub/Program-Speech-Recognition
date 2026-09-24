@@ -63,7 +63,13 @@ def _mono(i=1, start=0.0, end=1.0, src="你好", tgt=None):
 
 
 def test_render_monolingual_omits_the_target_line():
-    """C43/C44：单语会话不出译文行，且不得出现（未翻译）这种「失败」措辞。"""
+    """单语会话的输出格式逐字正确：编号/时间戳/原文，且不带译文行。
+
+    只锁格式，不锁「判据」：本测试的 target 是 None，srt 里原本的
+    `if cue.target:` 就已为假，锁不住「单语会话里混进带译文的 cue 也不出
+    译文」这条分支 —— 那条判据由隔壁的
+    test_render_monolingual_ignores_a_stray_target 锁着。
+    """
     text = render([_mono()])
 
     assert text == "1\n00:00:00,000 --> 00:00:01,000\n你好\n\n"
