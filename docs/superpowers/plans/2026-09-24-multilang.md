@@ -632,17 +632,19 @@ def test_rates_are_none_or_zero_when_a_side_is_empty():
     c = Confusion(true_speech=0, false_drop=0, false_pass=0, true_nonspeech=3)
     assert c.positives == 0
     assert c.false_drop_rate == 0.0
-    assert c.false_pass_rate is None, "没有负样本时漏放率是「测不出来」，不是 0"
+    assert c.false_pass_rate == 0.0, "有负样本、漏放为 0 —— 是 0，不是「测不出来」"
 
     c = Confusion(true_speech=5, false_drop=0, false_pass=0, true_nonspeech=0)
     assert c.negatives == 0
     assert c.false_drop_rate == 0.0
-    assert c.false_pass_rate is None
+    assert c.false_pass_rate is None, "没有负样本时漏放率是「测不出来」，不是 0"
 
 
 def test_recommend_keeps_the_baseline_when_there_are_no_negatives():
     """C41：负样本为空时漏放无法度量，凭正样本单侧收紧是在看不见的那一侧下注。"""
-    rows = [_row("人说话", 0.7, -1.2, 1.5)]
+    # 这条行必须是被基准**留下**的（nsp/alp/cr 都在门限内），否则基准自己就是
+    # 误杀，那时该做的是放宽、不是保持 —— 见下面 loosens 那条的同一个行。
+    rows = [_row("人说话", 0.05, -0.2, 1.5)]
 
     rec = recommend(rows)
 
@@ -948,11 +950,13 @@ def recommend(rows: list[Row],
               baseline: Thresholds = UPSTREAM_BASELINE) -> Recommendation:
     """在「误杀 = 0」的候选里挑漏放最少的一个（C41）。
 
-    没有负样本时漏放无法度量，此时**保持基准不动**并说明原因 —— 凭正样本单侧
-    收紧或放松，都是在看不见的那一侧下注。
+    没有负样本、且基准没有误杀时，漏放无法度量，此时**保持基准不动**并说明原因
+    —— 凭正样本单侧收紧或放松，都是在看不见的那一侧下注。但基准一旦误杀
+    （C41 硬要求为 0），就必须在网格里找能救回来的候选，哪怕没有负样本：
+    「软指标测不出来」不能拿来豁免唯一那条硬指标。
     """
     base = confusion(rows, baseline)
-    if base.negatives == 0:
+    if base.negatives == 0 and base.false_drop == 0:
         return Recommendation(
             baseline, baseline, base, base,
             "负样本为空：漏放无法度量，保持原值（C41）。"
@@ -1417,7 +1421,7 @@ Read `.superpowers/calibration/ru.rows.json`。段数应与规格 §6.1 那张�
 
 用 Edit 直接改 `ru.rows.json` 里对应行的 `"label"`。
 
-> 这一轮不要为了填满负样本而硬凑（C42 / C41）。一条都标不出来是完全正常的产出，`recommend` 会照实说「漏放无法度量」并保持原值。
+> 这一轮不要为了填满负样本而硬凑（C42 / C41）。一条都标不出来是完全正常的产出，`recommend` 会照实说「漏放无法度量」并保持原值——**前提是基准没有误杀**。若基准在这次标注里误杀了真语音，它会先放宽（C41 的硬判据优先），报告里会用「误杀」那句说明。两种都是照实说，别把后者当成 bug。
 
 - [ ] **Step 10: 出 ru 的报告**
 
