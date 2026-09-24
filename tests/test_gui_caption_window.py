@@ -282,3 +282,18 @@ def test_clear_cues_also_clears_notices(window):
     window.clear_cues()
 
     assert "丢弃疑似幻觉" not in window.toPlainText()
+
+
+def test_an_empty_notice_is_ignored_not_rendered_as_untranslated(window):
+    """空提示不是提示。
+
+    若不拦，add_notice("") → add_cue({"notice": ""})，而 render_cue_html 里
+    `if notice:` 对空串为假，会一路落回双语分支，把空 source + target=None
+    渲染成「（未翻译）」—— C44 要消灭的标记出现在根本没尝试翻译的语境里。
+    """
+    window.add_notice("")
+    window.add_notice("   ")
+
+    text = window.toPlainText()
+    assert "未翻译" not in text
+    assert "⊘" not in text

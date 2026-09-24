@@ -300,9 +300,60 @@ def test_ordinary_statuses_still_reach_the_launcher(qapp):
     caption = CaptionWindow()
     launcher = LauncherWindow()
 
+    dispatch_status({"state": "loading", "message": "正在载入"},
+                    launcher=launcher, caption=caption)
+    assert launcher.status_text() == "正在载入"
+
     dispatch_status({"state": "running", "model": "large-v3-turbo",
                      "device": "cuda"}, launcher=launcher, caption=caption)
+    assert launcher.status_text() == "运行中 · large-v3-turbo · cuda"
 
-    assert "large-v3-turbo" in launcher.status_text()
+    dispatch_status({"state": "warning", "message": "内存告急"},
+                    launcher=launcher, caption=caption)
+    assert launcher.status_text() == "内存告急"
+
+    dispatch_status({"state": "degraded", "message": "降级了"},
+                    launcher=launcher, caption=caption)
+    assert launcher.status_text() == "降级了"
+
+    dispatch_status({"state": "stopped"}, launcher=launcher, caption=caption)
+    assert launcher.status_text() == "已停止"
+
+    caption.close()
+    launcher.close()
+
+
+def test_running_suffix_matches_the_other_two_consumers(qapp):
+    """C43：bilingual 派生出的后缀必须与 CLI 与网页逐字一致。
+
+    断言整行相等而非子串 —— 中间点、空格、字符错一个都是 C43 违约，
+    子串检查根本发现不了。
+    """
+    from chrometrans.gui.app import dispatch_status
+    from chrometrans.gui.caption_window import CaptionWindow
+    from chrometrans.gui.launcher import LauncherWindow
+
+    caption = CaptionWindow()
+    launcher = LauncherWindow()
+
+    dispatch_status({"state": "running", "model": "large-v3-turbo",
+                     "device": "cuda", "bilingual": True},
+                    launcher=launcher, caption=caption)
+    assert launcher.status_text() == "运行中 · large-v3-turbo · cuda · 翻译中"
+
+    dispatch_status({"state": "running", "model": "large-v3-turbo",
+                     "device": "cuda", "bilingual": False},
+                    launcher=launcher, caption=caption)
+    assert launcher.status_text() == "运行中 · large-v3-turbo · cuda · 不翻译"
+
+    dispatch_status({"state": "running", "model": "large-v3-turbo",
+                     "device": "cuda"},
+                    launcher=launcher, caption=caption)
+    assert launcher.status_text() == "运行中 · large-v3-turbo · cuda"
+
+    dispatch_status({"state": "running", "pid": 123, "bilingual": False},
+                    launcher=launcher, caption=caption)
+    assert launcher.status_text() == "运行中 · 按进程捕获（PID 123） · 不翻译"
+
     caption.close()
     launcher.close()

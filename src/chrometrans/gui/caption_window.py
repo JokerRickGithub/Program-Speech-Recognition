@@ -128,7 +128,14 @@ class CaptionWindow(QWidget):
         进的是同一个 Transcript 模型，不是直接 append 到控件：改字号或淘汰最旧
         一条都会触发 _rerender 重建整份文档，只 append 的写法会在那一刻凭空
         消失 —— 而「凭空消失」正是 C45 要消灭的东西。
+
+        空文本不是提示：render_cue_html 里 `if notice:` 对空串为假，会一路落回
+        双语分支，把空 source + target=None 渲染成「（未翻译）」—— C44 要消灭的
+        「翻译失败」标记，出现在根本没尝试翻译的语境里。
         """
+        text = (text or "").strip()
+        if not text:
+            return
         self.add_cue({"notice": text})
 
     def _rerender(self) -> None:
