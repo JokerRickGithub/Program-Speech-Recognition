@@ -43,11 +43,54 @@ class SegmenterConfig:
 
 
 @dataclass(frozen=True)
+class LanguageProfile:
+    """一门音频语言的完整画像（spec §5.1）。
+
+    三个语言代码字段刻意不合并：en / ru 上它们碰巧都是同一个字符串，zh 上立刻
+    分叉（Whisper 认 "zh"，Azure 的源语言是 "zh-Hans"）。合成一个字段，迟早要
+    在某处拆回来。
+    """
+    code: str                  # 界面与持久化的 id："en" / "ru" / "zh"
+    label: str                 # 下拉里显示的名字
+    asr_language: str          # -> Whisper 的 language 参数
+    translate_src: str | None  # -> 翻译层源语言；None = 该语言不翻译
+    initial_prompt: str | None
+    no_speech_prob_threshold: float
+    avg_logprob_threshold: float
+    compression_ratio_threshold: float
+    calibrated_on: str         # 这组数字的依据；指向标定报告
+
+
+LANGUAGES: dict[str, LanguageProfile] = {
+    "en": LanguageProfile(
+        code="en",
+        label="英语",
+        asr_language="en",
+        translate_src="en",
+        initial_prompt=None,
+        # faster-whisper 参考实现的默认值（transcribe.py:274-276）。其判定逻辑
+        # （transcribe.py:1215-1224）与本项目 is_hallucination 形状一致，差异只在
+        # avg_logprob == 门限这一个零测度点上（spec §6.4）。
+        #
+        # 刻意不重新标定（C40）：把一个建立在评测集上的默认值，换成建立在一个人
+        # 8 分钟录音上的自定义值，是降级而非升级。
+        no_speech_prob_threshold=0.6,
+        avg_logprob_threshold=-1.0,
+        compression_ratio_threshold=2.4,
+        calibrated_on="faster-whisper 参考实现默认值（transcribe.py:274-276）",
+    ),
+}
+
+DEFAULT_LANGUAGE = "en"
+
+
+@dataclass(frozen=True)
 class AsrConfig:
     model: str = "large-v3-turbo"
     device: str = "cuda"
     compute_type: str = "int8_float16"
     language: str = "en"
+    initial_prompt: str | None = None
     beam_size: int = 5
     word_timestamps: bool = True
     # C12：幻觉过滤阈值
@@ -58,7 +101,7 @@ class AsrConfig:
 
 @dataclass(frozen=True)
 class TranslateConfig:
-    src: str = "en"
+    src: str | None = "en"
     tgt: str = "zh-Hans"
     azure_key: str | None = None
     azure_region: str = "global"
@@ -85,11 +128,30 @@ class Config:
     output: OutputConfig = field(default_factory=OutputConfig)
 
 
-def load_config() -> Config:
-    """从环境变量读取凭据，其余走默认值。"""
+def load_config(language: str = DEFAULT_LANGUAGE) -> Config:
+    """唯一入口：从 profile 同时定下 asr.language 与 translate.src（C39）。
+
+    不变量收在这一个函数上是刻意的。两处各写一遍就有一处会先改；而这两处不同步
+    不会报错，只会让 Whisper 用英语模型去听俄语音频，输出一段通顺但完全编造的
+    英文 —— 这是本项目里最危险的一类失败。
+    """
+    try:
+        profile = LANGUAGES[language]
+    except KeyError:
+        raise ValueError(
+            f"不认识的音频语言：{language!r}；可用：{sorted(LANGUAGES)}") from None
+
     translate = TranslateConfig(
+        src=profile.translate_src,
         azure_key=os.environ.get("AZURE_TRANSLATOR_KEY"),
         azure_region=os.environ.get("AZURE_TRANSLATOR_REGION", "global"),
         google_key=os.environ.get("GOOGLE_TRANSLATE_KEY"),
     )
-    return Config(translate=translate)
+    asr = AsrConfig(
+        language=profile.asr_language,
+        initial_prompt=profile.initial_prompt,
+        no_speech_prob_threshold=profile.no_speech_prob_threshold,
+        avg_logprob_threshold=profile.avg_logprob_threshold,
+        compression_ratio_threshold=profile.compression_ratio_threshold,
+    )
+    return Config(asr=asr, translate=translate)
