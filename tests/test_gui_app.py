@@ -360,3 +360,66 @@ def test_gui_running_line_locks_the_session_mode_suffix(qapp):
 
     caption.close()
     launcher.close()
+
+
+def test_startup_restores_the_saved_language(qapp, tmp_path, monkeypatch):
+    """持久化的语言要真的回到下拉里 —— 存了不读等于没存。
+
+    照 test_startup_path_runs_to_completion 的写法驱动整条启动路径（同一个
+    settings_path 补丁、同一个「用重复定时器退循环」的退出口）。
+    """
+    import json
+
+    from PySide6.QtCore import QTimer
+    from chrometrans.gui import app as gui_app
+    from chrometrans.gui import settings as gui_settings
+    from chrometrans.gui.launcher import LauncherWindow
+
+    path = tmp_path / "gui.json"
+    path.write_text(json.dumps({"language": "zh"}), encoding="utf-8")
+    monkeypatch.setattr(gui_settings, "settings_path", lambda: path)
+
+    # 只验「main 把存下来的语言交给了下拉」，所以把 set_language 换成探针；
+    # 下拉本身选不选得中由 test_gui_launcher.py 那几条管。
+    seen = {}
+    monkeypatch.setattr(LauncherWindow, "set_language",
+                        lambda self, code: seen.update(code=code))
+
+    timer = QTimer()
+    timer.setInterval(50)
+    timer.timeout.connect(qapp.quit)
+    timer.start()
+    try:
+        assert gui_app.main([]) == 0
+    finally:
+        timer.stop()
+
+    assert seen.get("code") == "zh", "启动时必须把存下来的语言放回下拉"
+
+
+def test_persist_settings_writes_the_selected_language(monkeypatch, tmp_path):
+    """「存」的那一端 —— 「读」的那端由 test_startup_restores_the_saved_language 管。
+
+    两端分开测，因为整条路径在测试里跑不到 persist()：退循环靠 qapp.quit()，
+    而 quit 不走 on_stop/on_quit。
+    """
+    import json
+
+    from chrometrans.gui import app as gui_app
+    from chrometrans.gui import settings as gui_settings
+    from chrometrans.gui.settings import GuiSettings
+
+    path = tmp_path / "gui.json"
+    monkeypatch.setattr(gui_settings, "settings_path", lambda: path)
+
+    class FakeCaption:
+        def current_settings(self):
+            return GuiSettings(width=1234)
+
+    class FakeLauncher:
+        def selected_language(self):
+            return "zh"
+
+    gui_app.persist_settings(FakeCaption(), FakeLauncher())
+
+    assert json.loads(path.read_text(encoding="utf-8"))["language"] == "zh"

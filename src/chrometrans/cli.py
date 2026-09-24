@@ -71,6 +71,12 @@ def keyless_notice(cfg) -> str | None:
     """
     if cfg.azure_key or cfg.google_key:
         return None
+    if not cfg.src:
+        # 单语会话（translate_src=None）根本不翻译，也就不需要 key。提醒它
+        # 「没配 key」是凭空造出一个失败面（C44）；而且原文案说「中文将由免 key
+        # 谷歌通道提供」——在 zh profile 里中文是**源**语言，那句话在这条路径上
+        # 直接是假的。
+        return None
     return ("没有配置翻译 key：中文将由免 key 谷歌通道提供。"
             "那是未公开接口，随时可能失效或被限流（C17）。"
             "想稳定请设 AZURE_TRANSLATOR_KEY 或 GOOGLE_TRANSLATE_KEY。")

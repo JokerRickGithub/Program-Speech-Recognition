@@ -19,6 +19,7 @@ from chrometrans.gui.processes import make_resolver
 from chrometrans.gui.relay import EventRelay
 from chrometrans.gui.settings import load as load_settings
 from chrometrans.gui.settings import restore_position, save as save_settings
+from chrometrans.gui.settings import with_language
 
 STOP_TIMEOUT_S = 10.0
 
@@ -183,8 +184,21 @@ def dispatch_status(data: dict, *, launcher, caption) -> None:
         launcher.set_status("已停止")
 
 
+def persist_settings(caption, launcher) -> None:
+    """把语言与窗口几何一起写回 gui.json。
+
+    模块级而不是 main 里的闭包：闭包只能靠「点一次停止再重启程序」验，
+    而那条路径在测试里够不着 —— 测试里退循环靠 qapp.quit()，它不走
+    on_stop/on_quit。与 dispatch_status 同理。
+    """
+    save_settings(with_language(caption.current_settings(),
+                                launcher.selected_language()))
+
+
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(sys.argv[1:] if argv is None else argv)
+    # 这里的 cfg 只用来生成「没配 key」的提示（纯环境变量，与语言无关）。
+    # 真正跑捕获用的那份在 on_start 里现算 —— 用户可以在启动器里改语言。
     cfg = load_config()
 
     app = QApplication.instance() or QApplication(sys.argv[:1])
@@ -199,8 +213,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.no_server:
         launcher.set_page_option_enabled(False)
 
-    # 恢复上次的位置；落在已拔掉的显示器上就居中回来
-    caption.apply_settings(restore_position(load_settings(), _screens()))
+    # 恢复上次的位置与语言；窗口落在已拔掉的显示器上就居中回来
+    settings = load_settings()
+    caption.apply_settings(restore_position(settings, _screens()))
+    launcher.set_language(settings.language)
 
     # 网页是可选的。要在没开网页时也能原样跑，publish 得有个空实现。
     # 复选框只在「开始」时被读一次（on_start 里的 should_start_page_server）：
@@ -216,7 +232,7 @@ def main(argv: list[str] | None = None) -> int:
         publish(event)
 
     def persist() -> None:
-        save_settings(caption.current_settings())
+        persist_settings(caption, launcher)
 
     def on_finished() -> None:
         launcher.set_capturing(False)
@@ -243,6 +259,15 @@ def main(argv: list[str] | None = None) -> int:
             # 这时不能收窗口、不能把按钮切成「停止」—— 什么都还没开始跑。
             relay.error.emit("上一次的捕获还没停下来，请退出程序后重开")
             return
+        try:
+            # 语言在启动器里随时可能被改，所以这里现算，不能用 main 开头那份。
+            # 界面能选的语言一定在 LANGUAGES 里，这个兜底是给「设置文件被手改成
+            # 未知值」留的 —— 宁可拒绝启动并说明，也不要退回英语模型去听俄语
+            # （C38/C39）。
+            session_cfg = load_config(launcher.selected_language())
+        except ValueError as exc:
+            relay.error.emit(str(exc))
+            return
         if should_start_page_server(no_server=args.no_server,
                                     enabled=launcher.open_page_enabled(),
                                     started=server_started):
@@ -258,7 +283,7 @@ def main(argv: list[str] | None = None) -> int:
         launcher.hide()
         caption.show()
         caption.raise_()
-        controller.start(proc, cfg=cfg, emit=emit)
+        controller.start(proc, cfg=session_cfg, emit=emit)
 
     def on_stop() -> None:
         controller.stop_and_wait()

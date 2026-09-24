@@ -183,3 +183,16 @@ def test_running_line_says_nothing_about_mode_when_the_key_is_missing(capsys):
 
     err = capsys.readouterr().err.strip()
     assert err == "— 运行中 · large-v3-turbo · cuda"
+
+
+def test_keyless_notice_is_silent_for_a_monolingual_session():
+    """C44：单语会话不翻译，提醒「没配 key」是凭空造出的失败面；而且原文案把
+    中文说成谷歌翻出来的目标，在 zh profile 里中文是源语言，那句话是假的。
+    """
+    from dataclasses import replace
+
+    from chrometrans.config import load_config
+
+    base = replace(load_config("zh").translate, azure_key=None, google_key=None)
+    assert keyless_notice(base) is None, "单语会话不该提醒没配 key"
+    assert keyless_notice(replace(base, src="en")) is not None, "会翻译就得提醒（C17）"
