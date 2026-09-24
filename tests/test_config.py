@@ -103,3 +103,11 @@ def test_invariant_holds_for_a_non_english_profile(monkeypatch):
     assert cfg.asr.compression_ratio_threshold == 3.33
     # 未标定的字段不该被 profile 顺手改掉：tgt 仍是默认目标语言
     assert cfg.translate.tgt == "zh-Hans"
+
+
+def test_is_bilingual_derives_from_translate_src():
+    """is_bilingual 只由 translate.src 是否为 None 派生 —— C44 的单一来源。"""
+    from chrometrans.config import Config, TranslateConfig, is_bilingual
+
+    assert is_bilingual(Config()) is True
+    assert is_bilingual(Config(translate=TranslateConfig(src=None))) is False

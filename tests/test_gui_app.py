@@ -324,10 +324,11 @@ def test_ordinary_statuses_still_reach_the_launcher(qapp):
 
 
 def test_running_suffix_matches_the_other_two_consumers(qapp):
-    """C43：bilingual 派生出的后缀必须与 CLI 与网页逐字一致。
+    """C43：bilingual 派生出的后缀 —— 锁定 GUI 的整行。
 
     断言整行相等而非子串 —— 中间点、空格、字符错一个都是 C43 违约，
-    子串检查根本发现不了。
+    子串检查根本发现不了。CLI 的等价后缀随 --language 等任务另行落地，
+    此处只锁 GUI 这一行。
     """
     from chrometrans.gui.app import dispatch_status
     from chrometrans.gui.caption_window import CaptionWindow

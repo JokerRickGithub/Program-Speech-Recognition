@@ -155,3 +155,12 @@ def load_config(language: str = DEFAULT_LANGUAGE) -> Config:
         compression_ratio_threshold=profile.compression_ratio_threshold,
     )
     return Config(asr=asr, translate=translate)
+
+
+def is_bilingual(cfg: Config) -> bool:
+    """本会话是否翻译 —— 会话级属性，由 translate.src 是否为 None 派生。
+
+    只在这一处派生：engine 与 pipeline 都要用它。两处各写一遍就有一处会先改，
+    而这两处不同步不会报错，只会让某个显示面少说一句「不翻译」（C44）。
+    """
+    return cfg.translate.src is not None

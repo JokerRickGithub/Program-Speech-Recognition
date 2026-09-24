@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Callable, Iterable
 
 from chrometrans.audio.segmenter import Segment
-from chrometrans.config import Config
+from chrometrans.config import Config, is_bilingual
 from chrometrans.models import Cue
 from chrometrans.output.atomic import write_with_fallback
 from chrometrans.output.jsonl import JsonlWriter, session_dir
@@ -35,7 +35,7 @@ class Engine:
         self._dropped: list[dict] = []
         # 单语模式是会话级属性，由 translate.src 是否为 None 派生 —— 不另设
         # 一个需要和它保持同步的开关（spec §5.1 对 translate_src 就是这么做的）。
-        self._bilingual = cfg.translate.src is not None
+        self._bilingual = is_bilingual(cfg)
 
     # ---- 对外 ----
 
