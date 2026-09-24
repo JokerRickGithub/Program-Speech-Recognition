@@ -36,6 +36,11 @@ class Engine:
 
     def run(self) -> None:
         self._running = True
+        # 模型加载要几十秒（首次还要下载 1.6 GB）。不发这条事件，GUI 上就是
+        # 一个没反应的窗口 —— 用户会以为程序挂了而不是在加载。
+        self._emit({"event": "status", "data": {
+            "state": "loading",
+            "message": f"正在加载模型 {self._cfg.asr.model}…"}})
         self._asr.load()
 
         session = session_dir(self._cfg.output.output_root, datetime.now())

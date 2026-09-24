@@ -22,3 +22,9 @@ models/
 transcripts/
 recordings/
 captions.next.*
+
+# Git worktrees (isolated workspaces)
+.worktrees/
+
+# SDD 工作区（进度账本、任务简报、报告、评审包）
+.superpowers/
