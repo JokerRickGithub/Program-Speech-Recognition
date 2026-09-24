@@ -15,6 +15,7 @@
   .src { font-size: 14px; color: #9aa0a6; }
   .tgt { font-size: 22px; line-height: 1.35; margin-top: 4px; }
   .tgt.missing { color: #6b7280; font-style: italic; font-size: 16px; }
+  .notice { color: #8a7a4a; font-style: italic; font-size: 13px; }
 </style>
 </head>
 <body>
@@ -35,33 +36,74 @@ function connect() {
   ws.onmessage = (e) => {
     const msg = JSON.parse(e.data);
     if (msg.event === 'cue') return addCue(msg.data);
-    if (msg.event === 'status') return setStatus(msg.data);
+    if (msg.event === 'status') return onStatus(msg.data);
     if (msg.event === 'error') return console.warn('pipeline error:', msg.data.message);
   };
+}
+
+// C44：tgt_lang 为 null = 本会话不翻译（单语）；tgt_lang 有值而 target 为空
+// = 翻译失败。两者必须分得开 —— 复用后一条会让中文模式下每句话底下挂一条
+// 错误提示。判据与 output/srt.py、output/markdown.py、caption_window.py 同源。
+function cueIsMonolingual(cue) {
+  // 严格相等，不能用 == null：JS 里 undefined == null 为真，宽松比较会把
+  // 「键缺失」也算成单语，于是把译文吞掉。判据与 models.is_monolingual 同义。
+  return cue.tgt_lang === null;
+}
+
+function appendToLog(el) {
+  cues.append(el);
+  while (cues.children.length > MAX_CUES) cues.removeChild(cues.firstChild);
+  window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+}
+
+function addNotice(text) {
+  const el = document.createElement('div');
+  el.className = 'notice';
+  el.textContent = `⊘ ${text}`;
+  appendToLog(el);
+}
+
+// 状态事件里只有 dropped 是「事件」而不是「当前状态」——它描述的是刚发生的一件
+// 事，塞进页眉只会被下一条状态顶走。所以它走 addNotice（C45）。
+function onStatus(data) {
+  if (data.state === 'dropped') return addNotice(data.message);
+  return setStatus(data);
 }
 
 function addCue(cue) {
   const el = document.createElement('div');
   el.className = 'cue';
   const src = document.createElement('div');
-  src.className = 'src';
-  src.textContent = cue.source;
-  const tgt = document.createElement('div');
-  tgt.className = cue.target ? 'tgt' : 'tgt missing';
-  tgt.textContent = cue.target || '（未翻译）';
-  el.append(src, tgt);
-  cues.append(el);
-  while (cues.children.length > MAX_CUES) cues.removeChild(cues.firstChild);
-  window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+
+  if (cueIsMonolingual(cue)) {
+    // 单语会话：原文就是主角，用大字号白字，且不出现「（未翻译）」（C44）
+    src.className = 'tgt';
+    src.textContent = cue.source;
+    el.append(src);
+  } else {
+    src.className = 'src';
+    src.textContent = cue.source;
+    const tgt = document.createElement('div');
+    tgt.className = cue.target ? 'tgt' : 'tgt missing';
+    tgt.textContent = cue.target || '（未翻译）';
+    el.append(src, tgt);
+  }
+
+  appendToLog(el);
 }
 
 function setStatus(data) {
   switch (data.state) {
-    case 'running':
-      status.textContent = data.model
+    case 'running': {
+      // 模式由会话级的 bilingual 派生。中文单语会话下「不翻译」是设计如此 ——
+      // 不写出来，用户会以为翻译坏了（C44）。键缺失时什么也不追加。
+      const mode = data.bilingual == null ? ''
+        : (data.bilingual ? ' · 翻译中' : ' · 不翻译');
+      status.textContent = (data.model
         ? `运行中 · ${data.model} · ${data.device}`
-        : `运行中 · 按进程捕获（PID ${data.pid}）`;
+        : `运行中 · 按进程捕获（PID ${data.pid}）`) + mode;
       break;
+    }
     case 'loading':
       status.textContent = data.message;
       break;
