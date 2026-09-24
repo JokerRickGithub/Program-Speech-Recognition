@@ -23,6 +23,10 @@ transcripts/
 recordings/
 captions.next.*
 
+# 标定用音频素材：第三方内容（公开致辞、付费课程），且体积大。
+# 标定报告只需引用文件名，可复现性对本地足够，不进仓库。
+sample/
+
 # Git worktrees (isolated workspaces)
 .worktrees/
 
