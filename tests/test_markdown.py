@@ -67,3 +67,35 @@ def test_cue_order_is_preserved():
     text = render([_cue(1, 5.0, 6.0, src="first"), _cue(2, 1.0, 2.0, src="second")])
     body = text.split("---\n", 1)[1]
     assert body.index("first") < body.index("second"), "按写入顺序排，不按时间重排"
+
+
+def _mono(i=1, start=0.0, end=1.0, src="你好", tgt=None):
+    """单语会话的 cue：tgt_lang 是 None（C44 的判据）。"""
+    return Cue(id=i, start=start, end=end, source=src, target=tgt,
+               src_lang="zh", tgt_lang=None)
+
+
+def test_header_never_prints_none():
+    """单语会话的表头不能渲染成 `zh → None`。
+
+    这是 schema 放宽成 `str | None` 之后唯一一处真的会把 None 印出来的地方：
+    表头是拼字符串，None 会老老实实变成 "None" 四个字母。
+    """
+    out = render([_mono()])
+
+    assert "None" not in out
+    assert "zh（不翻译）" in out
+
+
+def test_monolingual_body_has_no_target_block():
+    out = render([_mono(tgt="hello")])
+
+    assert "hello" not in out
+    assert "你好" in out
+
+
+def test_bilingual_header_is_unchanged():
+    """C43 的另一半：双语输出逐字不得变（回归既有格式）。"""
+    out = render([_cue(1, 0.0, 1.0)])
+
+    assert "en → zh-Hans" in out

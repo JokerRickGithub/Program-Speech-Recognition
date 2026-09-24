@@ -6,7 +6,7 @@ Markdown 是给人复读用的 —— 所以这里不要 cue 编号、不要毫�
 """
 from __future__ import annotations
 
-from chrometrans.models import Cue
+from chrometrans.models import Cue, is_monolingual
 
 
 def format_clock(seconds: float) -> str:
@@ -34,10 +34,15 @@ def render(cues: list[Cue]) -> str:
     if not cues:
         return ""
 
+    # 表头是拼字符串，None 会老老实实渲染成 "None" 四个字母 —— 单语会话下
+    # `tgt_lang` 正是 None，所以这里必须分支（C44）。这一处是本单元唯一一个
+    # 「不分支就会直接印出 None」的地方。
+    scope = (f"{cues[0].src_lang}（不翻译）" if is_monolingual(cues[0])
+             else f"{cues[0].src_lang} → {cues[0].tgt_lang}")
     head = [
         "# 网课字幕",
         "",
-        f"{cues[0].src_lang} → {cues[0].tgt_lang} ｜ {len(cues)} 条 ｜ "
+        f"{scope} ｜ {len(cues)} 条 ｜ "
         f"{format_clock(min(c.start for c in cues))} → "
         f"{format_clock(max(c.end for c in cues))}",
         "",
@@ -48,7 +53,8 @@ def render(cues: list[Cue]) -> str:
     for cue in cues:
         # rstrip：原文整段是空白时不要留一个带尾随空格的裸时间戳
         block = f"**{format_clock(cue.start)}** {_one_line(cue.source)}".rstrip()
-        target = _one_line(cue.target) if cue.target else ""
+        target = (_one_line(cue.target)
+                  if (cue.target and not is_monolingual(cue)) else "")
         if target:
             block += f"\n\n{target}"
         blocks.append(block)
