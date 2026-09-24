@@ -1516,7 +1516,8 @@ uv run chrometrans-calibrate record --audio "sample/中文音频.mp3" \
         avg_logprob_threshold=<报告里采用的 avg_logprob>,
         compression_ratio_threshold=<报告里采用的 compression_ratio>,
         calibrated_on="docs/superpowers/calibration/2026-09-24-ru.md"
-                      "（sample/俄语音频.MP3，38 段正样本）",
+                      "（sample/俄语音频.MP3，38 段切句器段落，"
+                      "44 行 Whisper 输出——6 段各被拆成两行）",
     ),
     "zh": LanguageProfile(
         code="zh",
@@ -1529,7 +1530,7 @@ uv run chrometrans-calibrate record --audio "sample/中文音频.mp3" \
         avg_logprob_threshold=<报告里采用的 avg_logprob>,
         compression_ratio_threshold=<报告里采用的 compression_ratio>,
         calibrated_on="docs/superpowers/calibration/2026-09-24-zh.md"
-                      "（sample/中文音频.mp3，59 段正样本）",
+                      "（sample/中文音频.mp3，59 段切句器段落，59 行 Whisper 输出）",
     ),
 ```
 
