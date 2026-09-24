@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-from chrometrans.config import load_config
+from chrometrans.config import DEFAULT_LANGUAGE, LANGUAGES, load_config
 from chrometrans.engine import Engine
 from chrometrans.pipeline import segment_source
 from chrometrans.serving import start_server
@@ -23,6 +23,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--no-server", action="store_true",
                         help="不启动网页，只识别与落盘")
     parser.add_argument("--process", default="chrome.exe")
+    # choices 由 LANGUAGES 生成：加语言时这里不用跟着改，而未知值由 argparse
+    # 直接拒绝并列全可用值 —— 正是 C38 要的那句话。
+    parser.add_argument("--language", default=DEFAULT_LANGUAGE,
+                        choices=sorted(LANGUAGES),
+                        help="音频语言；同时决定 ASR 语言与翻译源语言（C39）")
     args = parser.parse_args(argv)
     if args.host not in LOOPBACK_HOSTS:
         parser.error(f"只允许绑定回环地址（C25），收到：{args.host}")
@@ -73,7 +78,7 @@ def keyless_notice(cfg) -> str | None:
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(sys.argv[1:] if argv is None else argv)
-    cfg = load_config()
+    cfg = load_config(args.language)
 
     notice = keyless_notice(cfg.translate)
     if notice:
@@ -128,13 +133,22 @@ def print_event(event: dict) -> None:
     # 免得同一个状态在两个地方有两种说法。
     state = data.get("state")
     if state == "running":
+        # 模式由会话级的 bilingual 派生（Task 6）。中文单语会话下「不翻译」是
+        # 设计如此 —— 不写出来，用户会以为翻译坏了（C44）。文案与 index.html
+        # 的 setStatus() 一致。
+        mode = data.get("bilingual")
+        suffix = "" if mode is None else (" · 翻译中" if mode else " · 不翻译")
         if data.get("model"):
-            print(f"— 运行中 · {data['model']} · {data['device']}", file=sys.stderr)
+            print(f"— 运行中 · {data['model']} · {data['device']}{suffix}",
+                  file=sys.stderr)
         else:
-            print(f"— 运行中 · 按进程捕获（PID {data.get('pid')}）", file=sys.stderr)
+            print(f"— 运行中 · 按进程捕获（PID {data.get('pid')}）{suffix}",
+                  file=sys.stderr)
     elif state == "loading":
         print(f"— {data.get('message')}", file=sys.stderr)
-    elif state in ("degraded", "warning"):
+    elif state in ("degraded", "warning", "dropped"):
+        # dropped 与这两个同类：都是「有东西没按预期走」。C45 要求它可见，
+        # 而终端是唯一不会被下一句字幕顶走的地方 —— 它还有 scrollback。
         print(f"! {data.get('message')}", file=sys.stderr)
     elif state == "stopped":
         print("— 已停止", file=sys.stderr)

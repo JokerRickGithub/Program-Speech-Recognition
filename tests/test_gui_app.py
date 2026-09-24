@@ -323,11 +323,13 @@ def test_ordinary_statuses_still_reach_the_launcher(qapp):
     launcher.close()
 
 
-def test_running_suffix_matches_the_other_two_consumers(qapp):
+def test_gui_running_line_locks_the_session_mode_suffix(qapp):
     """C43：bilingual 派生出的后缀 —— 锁定 GUI 的整行。
 
     断言整行相等而非子串 —— 中间点、空格、字符错一个都是 C43 违约，
-    子串检查根本发现不了。CLI 的等价后缀随 --language 等任务另行落地，
+    子串检查根本发现不了。CLI 的等价整行锁在 tests/test_cli.py 的
+    test_running_line_reports_the_session_mode，网页的锁在
+    tests/test_static_index.py 的 test_the_running_line_reports_the_session_mode；
     此处只锁 GUI 这一行。
     """
     from chrometrans.gui.app import dispatch_status
