@@ -1359,6 +1359,29 @@ def _render_recommendation(meta: dict, rows: list[Row],
                      f"{c.false_drop} | {c.false_pass} | {c.true_nonspeech} | "
                      f"{c.false_drop_rate:.1%} | {rate} |")
 
+    # 三条轴的实测区间要印出来。理由不是「多点信息更好」：只看混淆矩阵时，
+    # 「照抄基准值」既可能是「基准很合适」，也可能是「这条轴压根没动过」，
+    # 而这两件事对 半年后读这份报告的人（C40 的受众）意义完全不同。
+    # 实测中就遇到过 no_speech_prob 在全部条目上逐位为 0 的情形 ——
+    # 那种情况下门限设成 0.6 还是 0.9 都一样，报告必须让人看得出来。
+    lines += ["", "## 统计量区间", "",
+              "每条轴在标注数据上的实测区间。区间离门限很远、或在某一类上完全不动，",
+              "都说明这条轴在这批素材上没有区分力 —— 那是结论的一部分，不是脚注。", "",
+              "| 轴 | 采用的门限 | 真语音 min / 中位 / max | 非语音 min / 中位 / max |",
+              "|---|---|---|---|"]
+
+    def _range(axis: str, label: str) -> str:
+        vals = sorted(getattr(r, axis) for r in rows if r.label == label)
+        if not vals:
+            return "—"
+        return f"{vals[0]:.3f} / {vals[len(vals) // 2]:.3f} / {vals[-1]:.3f}"
+
+    for axis, thr in (("no_speech_prob", rec.chosen.no_speech_prob),
+                      ("avg_logprob", rec.chosen.avg_logprob),
+                      ("compression_ratio", rec.chosen.compression_ratio)):
+        lines.append(f"| `{axis}` | {thr} | {_range(axis, SPEECH)} | "
+                     f"{_range(axis, NONSPEECH)} |")
+
     lines += ["", "## 结论", "", verdict, "", "## 被丢弃的条目", ""]
     dropped = dropped_rows(rows, rec.chosen)
     if not dropped:
