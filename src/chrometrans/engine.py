@@ -194,7 +194,8 @@ class Engine:
                 "message": f"dropped.jsonl 写出失败，本次跳过"
                            f"（丢弃记录只在内存里，JSONL 中没有它们的副本）：{exc}"}})
             return
-        self._write_view(session, "dropped.jsonl", body)
+        self._write_view(session, "dropped.jsonl", body,
+                         recovery_note="（丢弃记录只在内存里，JSONL 中没有它们的副本）")
 
     def _render_srt(self, session: Path, writer: JsonlWriter) -> None:
         """只渲 SRT。
@@ -218,8 +219,14 @@ class Engine:
             return
         self._write_view(session, filename, body)
 
-    def _write_view(self, session: Path, filename: str, body: str) -> None:
-        """原子写一个派生文件，失败只报不抛。"""
+    def _write_view(self, session: Path, filename: str, body: str, *,
+                    recovery_note: str = "（JSONL 完好，可随时重渲）") -> None:
+        """原子写一个派生文件，失败只报不抛。
+
+        `recovery_note` 说明这次失败会丢掉什么。默认那句对 srt / markdown 成立
+        —— 内容都在 JSONL 里，随时可重渲；但**对 dropped.jsonl 不成立**，丢弃
+        记录只在内存里。这条注释必须说实话，否则用户以为自己什么都没丢。
+        """
         try:
             written = write_with_fallback(
                 session / filename, body,
@@ -227,11 +234,11 @@ class Engine:
                 base_delay=self._cfg.output.replace_base_delay_s)
         except Exception as exc:
             self._emit({"event": "error", "data": {
-                "message": f"{filename} 重渲失败，本次跳过（JSONL 完好，可随时重渲）：{exc}"}})
+                "message": f"{filename} 重渲失败，本次跳过{recovery_note}：{exc}"}})
             return
         if written is None:
             self._emit({"event": "error", "data": {
-                "message": f"{filename} 两处路径都写不进去，本次跳过（JSONL 完好，可随时重渲）"}})
+                "message": f"{filename} 两处路径都写不进去，本次跳过{recovery_note}"}})
         elif written.name != filename:
             self._emit({"event": "error", "data": {
                 "message": f"{filename} 被占用，已改写到 {written.name}"}})

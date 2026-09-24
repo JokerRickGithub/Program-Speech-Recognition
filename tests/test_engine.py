@@ -524,3 +524,24 @@ def test_dropped_view_failure_does_not_escape(tmp_path):
     assert any(e["event"] == "error" and "dropped.jsonl" in e["data"]["message"]
                for e in events)
     assert not (next(tmp_path.iterdir()) / "dropped.jsonl").exists()
+
+
+def test_dropped_write_failure_reports_the_truth(tmp_path, monkeypatch):
+    """写入失败时那句话也必须是真的：丢弃记录只在内存里，没有 JSONL 副本可重渲。"""
+    def boom(*args, **kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr("chrometrans.engine.write_with_fallback", boom)
+    eng, events = _engine(tmp_path, StubTranslator(), [])
+    eng._dropped = [{"text": "编的", "no_speech_prob": 0.9,
+                     "avg_logprob": -1.7, "compression_ratio": 1.2}]
+
+    eng.run()
+
+    msgs = [e["data"]["message"] for e in events
+            if e["event"] == "error" and "dropped.jsonl" in e["data"]["message"]]
+    assert msgs, "写入失败必须说出来"
+    assert "可随时重渲" not in msgs[0], "丢弃记录不在 JSONL 里，这句话是假的"
+    assert "只在内存" in msgs[0]
+    assert any(e["event"] == "status" and e["data"].get("state") == "stopped"
+               for e in events), "重渲失败不得吞掉 stopped 事件"

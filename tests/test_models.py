@@ -45,7 +45,7 @@ def test_a_missing_key_is_not_monolingual():
 
     这条判据是有方向的：把畸形输入当成单语，会把一条其实存在的译文悄悄吞掉，
     而屏幕上什么异常都看不出来。退回双语渲染（显示「（未翻译）」）至少是可见的。
-    既有的 test_gui_caption_window.py 里有四条手工构造的 cue dict 正是这个形状，
+    既有的 test_gui_caption_window.py 里手工构造的 cue dict 正是这个形状，
     它们必须照旧通过。
     """
     from chrometrans.models import is_monolingual
