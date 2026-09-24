@@ -24,9 +24,11 @@ def _engine(tmp_path, translator, segments, utterance="hello world"):
 
     class StubAsr:
         def load(self): pass
+
         def transcribe(self, seg):
-            from chrometrans.asr.whisper_engine import Utterance
-            return Utterance(start=seg.start, end=seg.end, text=utterance)
+            from chrometrans.asr.whisper_engine import TranscribeResult, Utterance
+            return TranscribeResult(
+                utterance=Utterance(start=seg.start, end=seg.end, text=utterance))
 
     eng = Engine(
         cfg=Config(output=OutputConfig(output_root=tmp_path),
@@ -83,8 +85,10 @@ def test_asr_failure_does_not_stop_pipeline(tmp_path):
             self.n += 1
             if self.n == 2:
                 raise RuntimeError("cuda oops")
-            from chrometrans.asr.whisper_engine import Utterance
-            return Utterance(start=seg.start, end=seg.end, text=f"line {self.n}")
+            from chrometrans.asr.whisper_engine import TranscribeResult, Utterance
+            return TranscribeResult(
+                utterance=Utterance(start=seg.start, end=seg.end,
+                                    text=f"line {self.n}"))
 
     events = []
     eng = Engine(cfg=Config(output=OutputConfig(output_root=tmp_path)),
@@ -319,7 +323,8 @@ def test_loading_status_is_emitted_before_the_model_is_loaded(tmp_path):
             order.append("load")
 
         def transcribe(self, segment):
-            return None
+            from chrometrans.asr.whisper_engine import TranscribeResult
+            return TranscribeResult(utterance=None)
 
     class RecordingTranslator:
         async def translate(self, texts, src, tgt):

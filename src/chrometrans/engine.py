@@ -65,7 +65,12 @@ class Engine:
             for segment in source:
                 if not self._running:
                     break
-                utterance = self._transcribe(segment)
+                result = self._transcribe(segment)
+                if result is None:
+                    continue
+                # 本任务只解出识别结果；result.dropped 由 Task 5 变成事件与
+                # dropped.jsonl。在此之前「丢弃不发声」是既有状态。
+                utterance = result.utterance
                 if utterance is None:
                     continue
 
@@ -103,6 +108,7 @@ class Engine:
     # ---- 内部 ----
 
     def _transcribe(self, segment: Segment):
+        """返回 TranscribeResult；单段失败时返回 None（不得中断流水线，spec §6）。"""
         try:
             return self._asr.transcribe(segment)
         except Exception as exc:
