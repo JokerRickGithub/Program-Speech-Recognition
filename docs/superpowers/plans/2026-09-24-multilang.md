@@ -263,6 +263,8 @@ git commit -m "feat(config): LanguageProfile 与 load_config 的语言联动入�
 
 **Files:**
 - Modify: `src/chrometrans/asr/whisper_engine.py`
+- Modify: `src/chrometrans/engine.py`（只改调用点解出 `.utterance`，丢弃处理归 Task 5）
+- Modify: `tests/test_engine.py`（三个 stub 改成返回 `TranscribeResult`）
 - Test: `tests/test_whisper_engine.py`
 
 **Interfaces:**
@@ -272,6 +274,18 @@ git commit -m "feat(config): LanguageProfile 与 load_config 的语言联动入�
   - `Dropped`（frozen dataclass：`text`, `no_speech_prob`, `avg_logprob`, `compression_ratio`）
   - `TranscribeResult`（frozen dataclass：`utterance: Utterance | None`, `dropped: tuple[Dropped, ...] = ()`）
   - `WhisperEngine.transcribe(segment) -> TranscribeResult`
+  - `Engine._transcribe(segment) -> TranscribeResult | None`（异常时仍是 `None`）
+
+为什么要连消费侧一起改（**接口变更任务拥有它的消费者**）：只改 `whisper_engine.py`
+的话，`engine.py:68` 的 `if utterance is None` 会把 `TranscribeResult` 当
+`Utterance` 用，`utterance.text` 抛 AttributeError，被 `_transcribe` 的 except 吞掉
+——**每一段都报「识别失败」，一条字幕都出不来**。而测试是绿的，因为
+`tests/test_engine.py` 的 stub 要到 Task 5 才改。测试全绿而应用是坏的，正是 C45
+整套论证要消灭的那种失败，所以这个交接不留给下一个任务。
+
+本任务只把调用点解出 `.utterance`，**`result.dropped` 先原地丢掉** —— 把它变成事件
+与 `dropped.jsonl` 是 Task 5 的事。在此之前「丢弃不发声」是既有状态，不是本任务
+引入的回归。
 
 - [ ] **Step 1: 写失败的测试**
 
@@ -480,17 +494,52 @@ def transcribe_kwargs(cfg: AsrConfig) -> dict:
             dropped=tuple(dropped))
 ```
 
-- [ ] **Step 4: 跑测试确认通过**
+- [ ] **Step 4: 改消费侧（同一轮，不留红旗）**
 
-Run: `uv run pytest tests/test_whisper_engine.py -v`
-Expected: PASS
+`src/chrometrans/engine.py`——主循环里 `utterance = self._transcribe(segment)` 的两行：
 
-> 注意：`tests/test_engine.py` 这时会红——它的 `StubAsr.transcribe` 还返回裸 `Utterance`。Task 5 会修，本轮先不跑全量。
+```python
+                result = self._transcribe(segment)
+                if result is None:
+                    continue
+                # 本任务只解出识别结果；result.dropped 由 Task 5 变成事件与
+                # dropped.jsonl。在此之前「丢弃不发声」是既有状态。
+                utterance = result.utterance
+                if utterance is None:
+                    continue
+```
 
-- [ ] **Step 5: 提交**
+`_transcribe` 的文档字符串补一句（返回值类型变了）：
+
+```python
+    def _transcribe(self, segment: Segment):
+        """返回 TranscribeResult；单段失败时返回 None（不得中断流水线，spec §6）。"""
+```
+
+`tests/test_engine.py`——三个 stub 改成同一份契约：
+
+```python
+    class StubAsr:
+        def load(self): pass
+
+        def transcribe(self, seg):
+            from chrometrans.asr.whisper_engine import TranscribeResult, Utterance
+            return TranscribeResult(
+                utterance=Utterance(start=seg.start, end=seg.end, text=utterance))
+```
+
+`HalfBrokenAsr` 同样包一层 `TranscribeResult(utterance=...)`；返 `None` 表示「这段什么都没出」的那处（`RecordingAsr.transcribe`）改成 `return TranscribeResult(utterance=None)` —— 注意与「识别失败」不同：stub 里的 `None` 一直是「空结果」，而 `_transcribe` 的 `None` 是异常路径，两者在引擎里走同一条 `continue`。
+
+- [ ] **Step 5: 跑测试确认通过（两个文件一起）**
+
+Run: `uv run pytest tests/test_whisper_engine.py tests/test_engine.py -v`
+Expected: 两个文件都 PASS
+
+- [ ] **Step 6: 提交**
 
 ```bash
-git add src/chrometrans/asr/whisper_engine.py tests/test_whisper_engine.py
+git add src/chrometrans/asr/whisper_engine.py src/chrometrans/engine.py \
+        tests/test_whisper_engine.py tests/test_engine.py
 git commit -m "feat(asr): 抽出 transcribe_kwargs，transcribe 返回 TranscribeResult"
 ```
 
@@ -1490,19 +1539,11 @@ git commit -m "feat(calibrate): 标定工具与 ru/zh 实测标定报告
 
 - [ ] **Step 1: 写失败的测试**
 
-`tests/test_engine.py`——先把 `StubAsr` 与 `HalfBrokenAsr` 改成返回 `TranscribeResult`，把 `RecordingAsr.transcribe` 的 `return None` 改成 `return TranscribeResult(utterance=None)`；`_engine` 的 helper 同步改：
+`tests/test_engine.py` 追加：
 
-```python
-    class StubAsr:
-        def load(self): pass
-
-        def transcribe(self, seg):
-            from chrometrans.asr.whisper_engine import TranscribeResult, Utterance
-            return TranscribeResult(
-                utterance=Utterance(start=seg.start, end=seg.end, text=utterance))
-```
-
-然后追加：
+> `StubAsr` / `HalfBrokenAsr` / `RecordingAsr` 三个 stub **已经在 Task 2 里改好**了
+> （接口变更任务拥有它的消费者），这里不用再动。若你看到它们还返回裸 `Utterance`，
+> 说明 Task 2 没落地，停下来报告，不要在这里补。
 
 ```python
 def test_dropped_segments_are_reported_with_their_text(tmp_path):
@@ -1623,7 +1664,8 @@ def _preview(text: str, limit: int = 200) -> str:
     return text if len(text) <= limit else text[:limit] + "…"
 ```
 
-主循环里，`utterance = self._transcribe(segment)` 那段替换为：
+主循环里，Task 2 留下的那个 `result = self._transcribe(segment)` 块替换为
+（差别只有中间插入的 `_report_drops` 一行）：
 
 ```python
                 result = self._transcribe(segment)
