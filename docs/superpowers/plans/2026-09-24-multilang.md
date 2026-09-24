@@ -1502,10 +1502,18 @@ def test_russian_translates_from_russian():
     assert cfg.translate.src == "ru", "C39：两侧必须同步，否则是英语模型听俄语"
 ```
 
+> **不要删 `test_invariant_holds_for_a_non_english_profile`。** Task 1 落地时补的这条
+> （见 `tests/test_config.py:71`）用一份合成 `"zz"` profile 锁住「两个语言字段必须
+> 分叉」这件事。加入 ru/zh 之后，Task 1 那条按 profile 迭代的测试**才第一次真正生效**
+> —— 在那之前它是空洞的（en 的每个字段值恰好等于两个 config 的默认值，硬编码
+> `language="en"` 也能全绿，实测过）。合成那条仍然不可替代：ru 上 `asr_language` 与
+> `translate_src` 碰巧都是 `"ru"`，只有 zz 的 `"zz"` / `"zz-Hans"` 把分叉这件事钉死。
+
 - [ ] **Step 15: 跑全量测试**
 
 Run: `uv run pytest -q`
-Expected: 除 `tests/test_engine.py` 外全绿（它要等 Task 5 改 `StubAsr`）。若 Task 5 已完成则全绿。
+Expected: 全绿。（Task 2 已经把 `tests/test_engine.py` 的 stub 一并改到
+`TranscribeResult`，不再有「要等 Task 5」的例外。）
 
 - [ ] **Step 16: 提交**
 
