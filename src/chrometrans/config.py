@@ -61,6 +61,20 @@ class LanguageProfile:
     calibrated_on: str         # 这组数字的依据；指向标定报告
 
 
+# 2026-09-24 实测的一条**关于这套栈本身**的事实，读过两份标定报告后写在这里：
+# ru / zh 三组阈值都沿用上游默认值，不是因为没测，而是因为**测了也动不了**。
+#
+# is_hallucination（`asr/whisper_engine.py`）的形状是
+#     cr > 门限  或  (nsp > 门限 且 alp < 门限)
+# 而 no_speech_prob 在这套 CT2 后端上**恒为 bit-exact 0.0**（103 行输出、四种探针
+# 配置含数字静音，一次例外都没有）。于是 `nsp > 0.3` 恒假，把整条 AND 支连坐成
+# 不可达 —— **avg_logprob 门限无论取什么值都不会生效**。另一条轴也够不着：
+# 实测 compression_ratio 最大 1.707，而候选网格下限是 2.0。
+#
+# 结论：候选网格里 168 组阈值，没有一组能丢弃这 103 行中的任何一行。zh 那 1 条
+# 已判定的 nonspeech（见下）就是活证据 —— 漏放率 100%。误杀率 0 是硬判据（C41），
+# 它满足；但它的满足有一部分是**空转的**，别把「没误杀」读成「过滤有效」。
+# 修这三个轴是独立立项，不在本单元内（spec §6 之外）。
 LANGUAGES: dict[str, LanguageProfile] = {
     "en": LanguageProfile(
         code="en",
@@ -78,6 +92,42 @@ LANGUAGES: dict[str, LanguageProfile] = {
         avg_logprob_threshold=-1.0,
         compression_ratio_threshold=2.4,
         calibrated_on="faster-whisper 参考实现默认值（transcribe.py:274-276）",
+    ),
+    "ru": LanguageProfile(
+        code="ru",
+        label="俄语",
+        asr_language="ru",
+        translate_src="ru",
+        initial_prompt=None,
+        # 实测后沿用上游默认值（C40 明文承认的合法产出）：44 行输出逐条对上
+        # `sample/俄语字幕(不全.txt`（该字幕只覆盖 0–210s，见 spec §6.2），
+        # 没有一条读起来是重复或不着边际的，负样本为空。漏放因此无从度量，
+        # 凭正样本单侧收紧是在看不见的那一侧下注，故三个数字一个不动。
+        no_speech_prob_threshold=0.6,
+        avg_logprob_threshold=-1.0,
+        compression_ratio_threshold=2.4,
+        calibrated_on="docs/superpowers/calibration/2026-09-24-ru.md"
+                      "（sample/俄语音频.MP3，38 段切句器段落，44 行 Whisper 输出"
+                      "——6 段各被拆成两行；负样本为空，实测后沿用上游默认值）",
+    ),
+    "zh": LanguageProfile(
+        code="zh",
+        label="中文",
+        asr_language="zh",
+        # None = 中文走单语模式，本次会话不翻译（spec §5.3 / C44）
+        translate_src=None,
+        initial_prompt="以下是普通话的句子，请用简体中文转写。",
+        # 实测后沿用上游默认值。59 行里判出 1 条 nonspeech：164.5s 处的
+        # 「请用简体中文字幕提供」—— initial_prompt 自身的回声，中文字幕里没有，
+        # 且显然不是课程内容。它没被拦住（漏放率 100%，误杀率 0%）。
+        # 为什么拦不住见 LANGUAGES 上方那段：这套栈上过滤器的三条轴都不可达，
+        # 换任何一组阈值都一样，所以照抄基准值是照实说而不是没测。
+        no_speech_prob_threshold=0.6,
+        avg_logprob_threshold=-1.0,
+        compression_ratio_threshold=2.4,
+        calibrated_on="docs/superpowers/calibration/2026-09-24-zh.md"
+                      "（sample/中文音频.mp3，59 段切句器段落，59 行 Whisper 输出；"
+                      "1 条 nonspeech 未被拦住）",
     ),
 }
 

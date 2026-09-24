@@ -1,0 +1,602 @@
+{
+  "meta": {
+    "audio": "sample\\中文音频.mp3",
+    "language": "zh",
+    "initial_prompt": "以下是普通话的句子，请用简体中文转写。",
+    "window_s": null,
+    "model": "large-v3-turbo",
+    "date": "2026-09-24"
+  },
+  "rows": [
+    {
+      "index": 1,
+      "start": 3.072,
+      "end": 6.992,
+      "text": "下面我们进入零基础的课程学习。",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.22968750149011613,
+      "compression_ratio": 0.8035714285714286,
+      "label": "speech"
+    },
+    {
+      "index": 2,
+      "start": 8.288,
+      "end": 10.688,
+      "text": "一个呢,我们来看看基础知识结构。",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.19325657581028186,
+      "compression_ratio": 0.8070175438596491,
+      "label": "speech"
+    },
+    {
+      "index": 3,
+      "start": 11.008,
+      "end": 24.488,
+      "text": "啊,这个是我们三次讲的一个基本的框架了,就是每一讲之前呢,我们有一个知识结构啊,大家一定要注意这个结构的建立,它的重要性啊,就是我刚举目张。",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.16803075869878134,
+      "compression_ratio": 1.2147239263803682,
+      "label": "speech"
+    },
+    {
+      "index": 4,
+      "start": 24.928,
+      "end": 35.308,
+      "text": "我可以把这一讲里面的知识的脉络,它的体系,我们可以把它做一个有机的一个归纳,形成一个。",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.1313590053902116,
+      "compression_ratio": 1.0512820512820513,
+      "label": "speech"
+    },
+    {
+      "index": 5,
+      "start": 36.512,
+      "end": 37.412,
+      "text": "思维的结构。",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.3863636472008445,
+      "compression_ratio": 0.6666666666666666,
+      "label": "speech"
+    },
+    {
+      "index": 6,
+      "start": 38.784,
+      "end": 46.403999999999996,
+      "text": "在零基础里面呢,我想这个主要内容呢,是同学们从中学到大学啊。",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.08451704545454546,
+      "compression_ratio": 0.9148936170212766,
+      "label": "speech"
+    },
+    {
+      "index": 7,
+      "start": 47.264,
+      "end": 50.904,
+      "text": "他这个知识的一些个,衔接上的一些问题。",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.32500000596046447,
+      "compression_ratio": 0.9322033898305084,
+      "label": "speech"
+    },
+    {
+      "index": 8,
+      "start": 52.3,
+      "end": 58.66,
+      "text": "因为大家可能中学知识忘了不少,或者说中学许的时候呢,可能当时也还比较模糊。",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.1630067583676931,
+      "compression_ratio": 0.9469026548672567,
+      "label": "speech"
+    },
+    {
+      "index": 9,
+      "start": 59.84,
+      "end": 71.36,
+      "text": "哪些东西需要我们把它这个重新捡回来,或者说更加深刻的去把握呢?我想主要呢,从以下几点跟大家说一下。一个是基本逻辑。",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.11516203372566788,
+      "compression_ratio": 1.0714285714285714,
+      "label": "speech"
+    },
+    {
+      "index": 10,
+      "start": 72.608,
+      "end": 76.208,
+      "text": "当然大家知道基本逻辑的这个范围实际上是很宽泛的。",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.1473599199591012,
+      "compression_ratio": 0.8674698795180723,
+      "label": "speech"
+    },
+    {
+      "index": 11,
+      "start": 76.512,
+      "end": 90.912,
+      "text": "但是呢,在我们考试当中呢,我想主要是从三个方面呢,跟大家做一些训练。因为这个正好是我们考研数学里面经常用到的这个基本逻辑。第二个呢,就是解析式的概念和运算。",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.04671875178813934,
+      "compression_ratio": 1.1894736842105262,
+      "label": "speech"
+    },
+    {
+      "index": 12,
+      "start": 91.92399999999999,
+      "end": 94.164,
+      "text": "大家要知道,这个解析式啊。",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.6780134056295667,
+      "compression_ratio": 0.7708333333333334,
+      "label": "speech"
+    },
+    {
+      "index": 13,
+      "start": 95.37599999999999,
+      "end": 108.15599999999999,
+      "text": "很多同学对解析室是什么?不是很了解的。那么解析室本身它是有一个结构的。解析室底下有指标题。指标题底下还有指标题。",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.1343005881423042,
+      "compression_ratio": 1.3174603174603174,
+      "label": "speech"
+    },
+    {
+      "index": 14,
+      "start": 108.352,
+      "end": 120.83200000000001,
+      "text": "一直会到我们的单向式和多向式,那么很多人对这儿都搞不清楚,那你要想想看,你对于不同的解析是,你不知道它的名字,或者说你不知道它这个式子的特点。",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.1887807445447953,
+      "compression_ratio": 1.1941176470588235,
+      "label": "speech"
+    },
+    {
+      "index": 15,
+      "start": 121.664,
+      "end": 124.164,
+      "text": "那么你当然没有相应的办法去处理它。",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.08713107680281003,
+      "compression_ratio": 0.8225806451612904,
+      "label": "speech"
+    },
+    {
+      "index": 16,
+      "start": 124.8,
+      "end": 127.61999999999999,
+      "text": "所以这个内容是很重要的。",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.4469401116172473,
+      "compression_ratio": 0.7659574468085106,
+      "label": "speech"
+    },
+    {
+      "index": 17,
+      "start": 129.856,
+      "end": 142.55599999999998,
+      "text": "这个从二五考生的这个反馈上来看啊,我觉得这个我们二六的同学呢,是要这个感谢你们二五的学长学姐的,而且他们告诉我哪些东西他不知道。",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.13508522402156484,
+      "compression_ratio": 1.1847133757961783,
+      "label": "speech"
+    },
+    {
+      "index": 18,
+      "start": 143.04,
+      "end": 153.56,
+      "text": "他不知道这个式子是叫什么,也就是说不知道他的特点和相应处理办法,所以才导致那个考研题他不会做的,这就是非常有价值的反馈。",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.18122209369071893,
+      "compression_ratio": 1.1153846153846154,
+      "label": "speech"
+    },
+    {
+      "index": 19,
+      "start": 154.304,
+      "end": 163.064,
+      "text": "所以二六同学呢,我们这个解析式啊,要好好的讲讲,然后呢,就包括他相应的运算,然后我最终要落实到这个运算上去,对吧?",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.19042968883046082,
+      "compression_ratio": 1.1056338028169015,
+      "label": "speech"
+    },
+    {
+      "index": 20,
+      "start": 164.48,
+      "end": 165.57999999999998,
+      "text": "请用简体中文字幕提供",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.8317708174387614,
+      "compression_ratio": 0.7317073170731707,
+      "label": "nonspeech"
+    },
+    {
+      "index": 21,
+      "start": 166.368,
+      "end": 179.748,
+      "text": "第三块呢,就是方程和不等式了。大家知道这个方程啊,我们现在讲的是什么呢?一元N次方程,一般我们就是二次,三次,是吧?一般不会超过三。",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.09052905388045729,
+      "compression_ratio": 1.1304347826086956,
+      "label": "speech"
+    },
+    {
+      "index": 22,
+      "start": 180.224,
+      "end": 186.504,
+      "text": "但是关于方程,就是你给我一个N次的多项识。",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.2832031114534898,
+      "compression_ratio": 0.8428571428571429,
+      "label": "speech"
+    },
+    {
+      "index": 23,
+      "start": 187.34,
+      "end": 199.28,
+      "text": "然后呢,我另击等于零,那么等于零就变成了一个n次方程了,假如这个是一个变源,一个这个叫做一元的n次方程,是吧?那么一元的n次方程,它是怎么求解的?",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.3103298499352402,
+      "compression_ratio": 1.3221476510067114,
+      "label": "speech"
+    },
+    {
+      "index": 24,
+      "start": 200.32,
+      "end": 204.04,
+      "text": "是吧? 那么相应的根和系数的关系。",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.365337167915545,
+      "compression_ratio": 0.8392857142857143,
+      "label": "speech"
+    },
+    {
+      "index": 25,
+      "start": 204.864,
+      "end": 213.38400000000001,
+      "text": "等等吧,我们是需要把它整理一下的,那么相应的来讲的话呢,我们就涉及到了1月20方程里面。",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.20929276355003057,
+      "compression_ratio": 0.9523809523809523,
+      "label": "speech"
+    },
+    {
+      "index": 26,
+      "start": 213.728,
+      "end": 220.208,
+      "text": "如果它等于零,它叫方程,那么如果它大于零或者小于零,这实际上就是一个不等式。",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.14222755875342932,
+      "compression_ratio": 1.0485436893203883,
+      "label": "speech"
+    },
+    {
+      "index": 27,
+      "start": 221.248,
+      "end": 231.868,
+      "text": "是吧,而大有胆语令小一点就变成不等事了。那么这些个不等问题该怎么去处理。当然我们这里还有啊,相应的就是不只是一元n次方程。",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.3574892369837597,
+      "compression_ratio": 1.0858895705521472,
+      "label": "speech"
+    },
+    {
+      "index": 28,
+      "start": 232.864,
+      "end": 240.524,
+      "text": "我们还有其他一些重要不等设和它的使用,这个呢,也是考研的一个重要基础了。",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.29734848484848486,
+      "compression_ratio": 0.9285714285714286,
+      "label": "speech"
+    },
+    {
+      "index": 29,
+      "start": 240.896,
+      "end": 248.476,
+      "text": "你要做个系统的归纳,这个对于大家后面去学习和做题很有帮助的。",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.21656709514996586,
+      "compression_ratio": 0.9166666666666666,
+      "label": "speech"
+    },
+    {
+      "index": 30,
+      "start": 249.504,
+      "end": 254.284,
+      "text": "那么第四块内容呢,就是我们讲的函数。",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.14586760338984037,
+      "compression_ratio": 0.8253968253968254,
+      "label": "speech"
+    },
+    {
+      "index": 31,
+      "start": 255.164,
+      "end": 265.944,
+      "text": "函数呢,大家在中学阶段是学过的啊,就是由这个一个是基本数的函数了,是吧,然后呢,由基本数的函数啊,经过有限次的四字运算。",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.22899589577659232,
+      "compression_ratio": 1.1830985915492958,
+      "label": "speech"
+    },
+    {
+      "index": 32,
+      "start": 266.432,
+      "end": 276.332,
+      "text": "或者符合得来的,能够用一个式子表达的,那么我们称之为出凳寒水。但是大家要知道啊,在这个……",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.4079861190583971,
+      "compression_ratio": 0.9699248120300752,
+      "label": "speech"
+    },
+    {
+      "index": 33,
+      "start": 277.216,
+      "end": 289.136,
+      "text": "基本出段函数里面呢,我们对于这个反声就函数了,很多同学这个反应啊,他不是很熟悉。中学教学里面可能对这个呢,没有作为重点去复习,是吧?去学习。",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.13754401828201723,
+      "compression_ratio": 1.18562874251497,
+      "label": "speech"
+    },
+    {
+      "index": 34,
+      "start": 290.24,
+      "end": 303.16,
+      "text": "所以反三角函数呢,我们要好好的去讲一讲,但事实上来说啊,同学们知道,密函数函数函数,对数函数,以及相应的三角函数,这些问题啊。",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.20229639541922192,
+      "compression_ratio": 1.2237762237762237,
+      "label": "speech"
+    },
+    {
+      "index": 35,
+      "start": 305.248,
+      "end": 314.08799999999997,
+      "text": "还都是有的,是吧?就是说你很多计算公式啊,它的计算相应的一些性质啊,很多同学也是不熟悉的,容易做错。",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.17234375178813935,
+      "compression_ratio": 1.037037037037037,
+      "label": "speech"
+    },
+    {
+      "index": 36,
+      "start": 315.296,
+      "end": 325.996,
+      "text": "当然关于函数呢,我们当然还有一个对称性的问题,是吧?呃,其实对称这个概念呢,是十分重要的,啊,这个是十分重要的,啊,大家知道这个。",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.1865571179780467,
+      "compression_ratio": 1.2291666666666667,
+      "label": "speech"
+    },
+    {
+      "index": 37,
+      "start": 327.2,
+      "end": 332.58,
+      "text": "呃 世界啊充满了对称问题啊充满了对称性问题",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.3133370652794838,
+      "compression_ratio": 1.1730769230769231,
+      "label": "speech"
+    },
+    {
+      "index": 38,
+      "start": 334.056,
+      "end": 342.95599999999996,
+      "text": "当然我现在说的,大家可能只能理解到什么呢?比如说,关于Y周对称啊,是吧?关于X周对称啊,等等。理解到这儿呢,关于原点对称啊,是吧?",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.31494140764698386,
+      "compression_ratio": 1.2357142857142858,
+      "label": "speech"
+    },
+    {
+      "index": 39,
+      "start": 344.128,
+      "end": 350.20799999999997,
+      "text": "理解到这个已经很好了,是吧。那么在未来大家以后学习当中,那么考研可能。",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.24786931818181818,
+      "compression_ratio": 0.926605504587156,
+      "label": "speech"
+    },
+    {
+      "index": 40,
+      "start": 351.168,
+      "end": 355.468,
+      "text": "大家是学不到的啊,在考验以后啊,各位准研究生。",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.24083534685465005,
+      "compression_ratio": 0.8552631578947368,
+      "label": "speech"
+    },
+    {
+      "index": 41,
+      "start": 355.904,
+      "end": 370.344,
+      "text": "你们到了研究的阶段,那很可能会碰到啊,真正关于对称性问题的研究,啊,就是从讨论,比如说,从群论开始啊,大家就开始真正的去啊,这个研究现代数学了。",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.1869791595141093,
+      "compression_ratio": 1.1904761904761905,
+      "label": "speech"
+    },
+    {
+      "index": 42,
+      "start": 371.52,
+      "end": 382.5,
+      "text": "这个呢,我就不啰嗦了,我们现在要求的对称,那么就是传统意义上的图形,关于某一条线,或者某一个点的对称。",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.16419955722072668,
+      "compression_ratio": 1.0592592592592593,
+      "label": "speech"
+    },
+    {
+      "index": 43,
+      "start": 384.288,
+      "end": 386.908,
+      "text": "要掌握清楚,我们做详细的一个讲解了。",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.2769886322996833,
+      "compression_ratio": 0.8253968253968254,
+      "label": "speech"
+    },
+    {
+      "index": 44,
+      "start": 388.224,
+      "end": 399.144,
+      "text": "第五个呢,就涉及到就是数列和它的单调性问题了。这个内容呢,因为数列大家知道这个是考试的一个难点了。",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.20906930060490317,
+      "compression_ratio": 1.0833333333333333,
+      "label": "speech"
+    },
+    {
+      "index": 45,
+      "start": 399.456,
+      "end": 411.05600000000004,
+      "text": "是吧,那么但是我们说关于基本的数列的收敛问题,大家还是要会的,基本上还是要会的,所以呢我们在前面要给大家做这个关于数列的基本的。",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.2057782973883287,
+      "compression_ratio": 1.2432432432432432,
+      "label": "speech"
+    },
+    {
+      "index": 46,
+      "start": 411.424,
+      "end": 423.904,
+      "text": "一些个讲解啊,包括数列的基本概念,是吧?然后包括我们讲到这等差数列,等笔数列,单调数列,是吧?数列的指列啊,这些概念大家就要知道。",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.25579638490753787,
+      "compression_ratio": 1.2094594594594594,
+      "label": "speech"
+    },
+    {
+      "index": 47,
+      "start": 425.216,
+      "end": 426.416,
+      "text": "这个呢是要给大家说一下。",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.4765625099341075,
+      "compression_ratio": 0.7659574468085106,
+      "label": "speech"
+    },
+    {
+      "index": 48,
+      "start": 427.84,
+      "end": 428.59999999999997,
+      "text": "然后还一个是",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.8973214285714286,
+      "compression_ratio": 0.6206896551724138,
+      "label": "speech"
+    },
+    {
+      "index": 49,
+      "start": 429.952,
+      "end": 430.712,
+      "text": "就是坐标系。",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.5607638888888888,
+      "compression_ratio": 0.6206896551724138,
+      "label": "speech"
+    },
+    {
+      "index": 50,
+      "start": 432.736,
+      "end": 442.376,
+      "text": "你们知道,坐标系我们公共考点上呢,主要是两个,一个是直角坐标系,还有一个是极坐标系。就关于这个极坐标系啊。",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.31988637230613015,
+      "compression_ratio": 1.1796875,
+      "label": "speech"
+    },
+    {
+      "index": 51,
+      "start": 442.752,
+      "end": 457.172,
+      "text": "有不少同学呢,可能中学阶段学的也不是很多,是吧?或者不是很熟悉。所以我们呢,在这个极准备系在这儿呢,也要给大家做一个比较详细的一个讲解。你要把握住。",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.17031250278155008,
+      "compression_ratio": 1.1777777777777778,
+      "label": "speech"
+    },
+    {
+      "index": 52,
+      "start": 458.016,
+      "end": 465.296,
+      "text": "直角坐标系,以及相应的坐标的变换,主要是平移变换和旋转变换。",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.0961119158323421,
+      "compression_ratio": 1.011764705882353,
+      "label": "speech"
+    },
+    {
+      "index": 53,
+      "start": 465.632,
+      "end": 480.35200000000003,
+      "text": "还有就是脊椎卫系,以及脊椎卫系和脊椎卫系的关系,和他们的相互转化。因为你后面是无时无刻不要用刀,包括图形上我们也是,他有在脊椎卫系下的表达事。",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.1763529007027789,
+      "compression_ratio": 1.2576687116564418,
+      "label": "speech"
+    },
+    {
+      "index": 54,
+      "start": 480.632,
+      "end": 482.452,
+      "text": "还有在基督文心下的表达是",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.44555663131177425,
+      "compression_ratio": 0.7659574468085106,
+      "label": "speech"
+    },
+    {
+      "index": 55,
+      "start": 483.584,
+      "end": 492.644,
+      "text": "哎,那么这个大家既然要无时无刻的跟他们打交道,那么自然你在这个基础学习当中呢,要把这个要巩固好,是吧。",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.2455576085576824,
+      "compression_ratio": 1.0740740740740742,
+      "label": "speech"
+    },
+    {
+      "index": 56,
+      "start": 493.696,
+      "end": 499.41600000000005,
+      "text": "以上呢,是对这个我们的邻居处里面呢,要给大家讲的。",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.19589120480749342,
+      "compression_ratio": 0.8658536585365854,
+      "label": "speech"
+    },
+    {
+      "index": 57,
+      "start": 500.256,
+      "end": 511.59599999999995,
+      "text": "这六块内容的一个中述。说起来很简单啊,聊几句就把它讲完了。事实上呢,要证明深入进去啊,它可不是这么简单的。",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.291294628488166,
+      "compression_ratio": 1.06993006993007,
+      "label": "speech"
+    },
+    {
+      "index": 58,
+      "start": 512.544,
+      "end": 515.884,
+      "text": "然后这这些内容讲完,我们就进入第一讲。",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.30386514412729365,
+      "compression_ratio": 0.8333333333333334,
+      "label": "speech"
+    },
+    {
+      "index": 59,
+      "start": 516.256,
+      "end": 528.276,
+      "text": "大家知道,第一讲还是在打基础。所以我们把它结合起来,应该能够很好的给同学们做一个扎实的基本工作。",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.23074127213899479,
+      "compression_ratio": 1.0218978102189782,
+      "label": "speech"
+    }
+  ]
+}

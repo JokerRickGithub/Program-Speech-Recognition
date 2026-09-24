@@ -1,0 +1,452 @@
+{
+  "meta": {
+    "audio": "sample\\俄语音频.MP3",
+    "language": "ru",
+    "initial_prompt": null,
+    "window_s": null,
+    "model": "large-v3-turbo",
+    "date": "2026-09-24"
+  },
+  "rows": [
+    {
+      "index": 1,
+      "start": 0.864,
+      "end": 2.344,
+      "text": "Уважаемые граждане России!",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.11065204326923077,
+      "compression_ratio": 0.9423076923076923,
+      "label": "speech"
+    },
+    {
+      "index": 2,
+      "start": 3.36,
+      "end": 4.06,
+      "text": "Дорогие друзья!",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.1644965277777778,
+      "compression_ratio": 0.717948717948718,
+      "label": "speech"
+    },
+    {
+      "index": 3,
+      "start": 5.44,
+      "end": 9.02,
+      "text": "буквально через несколько минут вступит в свои права.",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.13403319753706455,
+      "compression_ratio": 1.180722891566265,
+      "label": "speech"
+    },
+    {
+      "index": 4,
+      "start": 9.824,
+      "end": 16.404,
+      "text": "Новый 2025 год, завершающий первую четверть XXI века.",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.0882013507864692,
+      "compression_ratio": 1.0227272727272727,
+      "label": "speech"
+    },
+    {
+      "index": 5,
+      "start": 18.112,
+      "end": 24.151999999999997,
+      "text": "В России этот период был наполнен многими, в том числе исторически значимыми, масштабными событиями.",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.04339599621016532,
+      "compression_ratio": 1.4375,
+      "label": "speech"
+    },
+    {
+      "index": 6,
+      "start": 25.12,
+      "end": 28.34,
+      "text": "Мы ставили перед собой большие цели и достигали их.",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.034722223670946226,
+      "compression_ratio": 1.1625,
+      "label": "speech"
+    },
+    {
+      "index": 7,
+      "start": 29.248,
+      "end": 31.048000000000002,
+      "text": "не распреодолевали испытания.",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.20868389423076922,
+      "compression_ratio": 1.0,
+      "label": "speech"
+    },
+    {
+      "index": 8,
+      "start": 32.0,
+      "end": 33.3,
+      "text": "Потому что были вместе.",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.09950087095300357,
+      "compression_ratio": 1.4621212121212122,
+      "label": "speech"
+    },
+    {
+      "index": 8,
+      "start": 33.82,
+      "end": 41.22,
+      "text": "Именно так крепло наше единство, наша вера в себя и в свои силы, в свои возможности.",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.09950087095300357,
+      "compression_ratio": 1.4621212121212122,
+      "label": "speech"
+    },
+    {
+      "index": 9,
+      "start": 42.464,
+      "end": 44.704,
+      "text": "Да, нам предстоит еще многое решить.",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.05450439406558871,
+      "compression_ratio": 0.9558823529411765,
+      "label": "speech"
+    },
+    {
+      "index": 10,
+      "start": 45.472,
+      "end": 48.252,
+      "text": "Но мы можем по праву гордиться тем, что уже сделано.",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.0674856069840883,
+      "compression_ratio": 1.0941176470588236,
+      "label": "speech"
+    },
+    {
+      "index": 11,
+      "start": 49.152,
+      "end": 53.852000000000004,
+      "text": "Это наше общее достояние, надежная основа для дальнейшего развития.",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.05937499880790711,
+      "compression_ratio": 1.2916666666666667,
+      "label": "speech"
+    },
+    {
+      "index": 12,
+      "start": 55.104,
+      "end": 58.464,
+      "text": "Наша страна – независимая, свободная и сильная.",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.08149413764476776,
+      "compression_ratio": 1.0609756097560976,
+      "label": "speech"
+    },
+    {
+      "index": 13,
+      "start": 59.52,
+      "end": 62.18000000000001,
+      "text": "смогла отдать ответ на сложнейшие вызовы.",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.07238769438117743,
+      "compression_ratio": 1.0704225352112675,
+      "label": "speech"
+    },
+    {
+      "index": 14,
+      "start": 63.04,
+      "end": 66.98,
+      "text": "И сейчас, на пороге Нового года, мы думаем о будущем.",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.0861235104856037,
+      "compression_ratio": 1.119047619047619,
+      "label": "speech"
+    },
+    {
+      "index": 15,
+      "start": 67.936,
+      "end": 72.376,
+      "text": "Уверены, что все будет хорошо. Будем идти только вперед.",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.08603515364229679,
+      "compression_ratio": 1.1744186046511629,
+      "label": "speech"
+    },
+    {
+      "index": 16,
+      "start": 73.568,
+      "end": 82.048,
+      "text": "Точно знаем, что абсолютной ценностью для нас была, есть и будет судьба России, благополучие ее граждан.",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.06705729083882438,
+      "compression_ratio": 1.3897058823529411,
+      "label": "speech"
+    },
+    {
+      "index": 17,
+      "start": 83.264,
+      "end": 87.164,
+      "text": "Искренние чувства к родине наполняют нашу жизнь высоким смыслом.",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.06897154695062495,
+      "compression_ratio": 1.7067307692307692,
+      "label": "speech"
+    },
+    {
+      "index": 17,
+      "start": 87.324,
+      "end": 96.78399999999999,
+      "text": "А стремление внести свой вклад в защиту ее суверенитета, безопасности, интересов, свободного развития стало для нас делом чести.",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.06897154695062495,
+      "compression_ratio": 1.7067307692307692,
+      "label": "speech"
+    },
+    {
+      "index": 18,
+      "start": 98.752,
+      "end": 99.812,
+      "text": "В эту новогоднюю ночь.",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.14038085440794626,
+      "compression_ratio": 0.9090909090909091,
+      "label": "speech"
+    },
+    {
+      "index": 19,
+      "start": 100.736,
+      "end": 108.176,
+      "text": "Помыслы, надежды родных и близких, миллионов людей по всей России вместе с нашими бойцами и командирами.",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.05926339328289032,
+      "compression_ratio": 1.4285714285714286,
+      "label": "speech"
+    },
+    {
+      "index": 20,
+      "start": 109.28,
+      "end": 114.76,
+      "text": "Вы подлинные герои, взявшие на себя великий ратный труд защищать Россию,",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.08927408838644624,
+      "compression_ratio": 1.537037037037037,
+      "label": "speech"
+    },
+    {
+      "index": 20,
+      "start": 115.06,
+      "end": 119.16,
+      "text": "обеспечить нашему народу прочные гарантии мира и безопасности.",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.08927408838644624,
+      "compression_ratio": 1.537037037037037,
+      "label": "speech"
+    },
+    {
+      "index": 21,
+      "start": 120.032,
+      "end": 122.752,
+      "text": "Мы гордимся вашим мужеством и отвагой.",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.0899218726158142,
+      "compression_ratio": 1.1645569620253164,
+      "label": "speech"
+    },
+    {
+      "index": 21,
+      "start": 123.292,
+      "end": 124.172,
+      "text": "Верим в вас.",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.0899218726158142,
+      "compression_ratio": 1.1645569620253164,
+      "label": "speech"
+    },
+    {
+      "index": 22,
+      "start": 125.984,
+      "end": 131.924,
+      "text": "В вашу честь, во славу 80-летия Великой Победы и как дань уважения к памяти.",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.05783420314805375,
+      "compression_ratio": 1.1858407079646018,
+      "label": "speech"
+    },
+    {
+      "index": 23,
+      "start": 132.96,
+      "end": 137.74,
+      "text": "Наших предков, во все времена сражавшихся за Родину, наступающие...",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.16127232408949307,
+      "compression_ratio": 1.2222222222222223,
+      "label": "speech"
+    },
+    {
+      "index": 24,
+      "start": 138.4,
+      "end": 143.54,
+      "text": "2025 объявлен в России годом защитника Отечества.",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.0846011497472462,
+      "compression_ratio": 1.0357142857142858,
+      "label": "speech"
+    },
+    {
+      "index": 25,
+      "start": 145.056,
+      "end": 149.256,
+      "text": "Мы дети, внуки и правнуки поколения сокрушившего нацизм.",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.07386718511581421,
+      "compression_ratio": 1.1704545454545454,
+      "label": "speech"
+    },
+    {
+      "index": 26,
+      "start": 150.144,
+      "end": 154.364,
+      "text": "Мы верны заветам и традициям наших ветеранов.",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.06868489624725448,
+      "compression_ratio": 1.1216216216216217,
+      "label": "speech"
+    },
+    {
+      "index": 27,
+      "start": 157.056,
+      "end": 157.716,
+      "text": "Дорогие друзья!",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.15201822916666666,
+      "compression_ratio": 0.717948717948718,
+      "label": "speech"
+    },
+    {
+      "index": 28,
+      "start": 159.296,
+      "end": 163.076,
+      "text": "Мы всегда относимся к встрече Нового года тепло и радушно.",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.048291015438735485,
+      "compression_ratio": 1.1777777777777778,
+      "label": "speech"
+    },
+    {
+      "index": 29,
+      "start": 163.808,
+      "end": 168.408,
+      "text": "И надеемся, что наши мечты и помыслы, самые добрые намерения,",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.058906248807907104,
+      "compression_ratio": 1.2222222222222223,
+      "label": "speech"
+    },
+    {
+      "index": 30,
+      "start": 169.216,
+      "end": 170.936,
+      "text": "Обязательно исполнится.",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.12509765177965165,
+      "compression_ratio": 0.8,
+      "label": "speech"
+    },
+    {
+      "index": 31,
+      "start": 172.32,
+      "end": 175.56,
+      "text": "До прихода Нового года осталось совсем немного.",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.059147138396898905,
+      "compression_ratio": 1.16,
+      "label": "speech"
+    },
+    {
+      "index": 32,
+      "start": 176.704,
+      "end": 177.44400000000002,
+      "text": "В эти минуты...",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.3830566331744194,
+      "compression_ratio": 0.6944444444444444,
+      "label": "speech"
+    },
+    {
+      "index": 33,
+      "start": 178.592,
+      "end": 180.67200000000003,
+      "text": "Рядом с нами самые близкие люди.",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.08917025656535707,
+      "compression_ratio": 1.2233009708737863,
+      "label": "speech"
+    },
+    {
+      "index": 33,
+      "start": 180.852,
+      "end": 184.352,
+      "text": "Это наша семья, дети, родители, внуки.",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.08917025656535707,
+      "compression_ratio": 1.2233009708737863,
+      "label": "speech"
+    },
+    {
+      "index": 34,
+      "start": 185.216,
+      "end": 185.836,
+      "text": "Наши друзья.",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.4223632737994194,
+      "compression_ratio": 0.6666666666666666,
+      "label": "speech"
+    },
+    {
+      "index": 35,
+      "start": 186.816,
+      "end": 188.036,
+      "text": "И боевые товарищи.",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.1335227218541232,
+      "compression_ratio": 0.7857142857142857,
+      "label": "speech"
+    },
+    {
+      "index": 36,
+      "start": 190.144,
+      "end": 198.864,
+      "text": "Желаю благополучия и процветания каждому нашему дому, каждой нашей семье и нашей любимой стране – России.",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.0680338539597061,
+      "compression_ratio": 1.4586466165413534,
+      "label": "speech"
+    },
+    {
+      "index": 37,
+      "start": 200.128,
+      "end": 203.468,
+      "text": "Когда мы вместе, все исполнится.",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.18343098709980646,
+      "compression_ratio": 0.90625,
+      "label": "speech"
+    },
+    {
+      "index": 38,
+      "start": 204.736,
+      "end": 206.37599999999998,
+      "text": "С Новым годом, дорогие друзья!",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.1497691808776422,
+      "compression_ratio": 1.2318840579710144,
+      "label": "speech"
+    },
+    {
+      "index": 38,
+      "start": 206.736,
+      "end": 210.956,
+      "text": "С Новым 2025 годом!",
+      "no_speech_prob": 0.0,
+      "avg_logprob": -0.1497691808776422,
+      "compression_ratio": 1.2318840579710144,
+      "label": "speech"
+    }
+  ]
+}

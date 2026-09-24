@@ -111,3 +111,19 @@ def test_is_bilingual_derives_from_translate_src():
 
     assert is_bilingual(Config()) is True
     assert is_bilingual(Config(translate=TranslateConfig(src=None))) is False
+
+
+def test_chinese_is_monolingual():
+    """C43 / C44：中文不翻译，且这件事是从 profile 派生的，不是散在各处的 if。"""
+    cfg = load_config("zh")
+
+    assert cfg.translate.src is None
+    assert cfg.asr.language == "zh"
+    assert cfg.asr.initial_prompt, "C46：靠提示词定向简体"
+
+
+def test_russian_translates_from_russian():
+    cfg = load_config("ru")
+
+    assert cfg.asr.language == "ru"
+    assert cfg.translate.src == "ru", "C39：两侧必须同步，否则是英语模型听俄语"
