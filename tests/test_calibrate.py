@@ -111,6 +111,45 @@ def test_recommend_says_so_when_the_grid_cannot_reach_zero_false_drops():
     assert "误杀" in rec.note
 
 
+def test_recommend_discloses_when_every_candidate_ties():
+    """全网格平手时，结论照实说：选基准是图省事，不是测出来的优势。
+
+    zh 那 1 条 initial_prompt 回声就是活例子 —— 全网格 168 组都漏放那 1 条、
+    没一组真的拦得住。结论若只说「漏放最少」，读者会读出并不存在的优势。
+    """
+    rows = [
+        _row("真语音", 0.05, -0.2, 1.2),
+        _row("拦不住的回声", 0.0, -0.8, 0.7, NONSPEECH),
+    ]
+
+    rec = recommend(rows)
+
+    assert rec.chosen_confusion.false_drop == 0
+    assert rec.chosen_confusion.false_pass == 1
+    assert "分不出高下" in rec.note
+    assert "168 组并列漏放 1 条" in rec.note
+    assert "图省事" in rec.note
+
+
+def test_recommend_keeps_old_wording_when_the_grid_discriminates():
+    """网格真能分高下时，结论仍用原措辞 —— 只有全平手才需要补充说明。
+
+    两条负样本各只能被一组阈值拦下，且只有同一组（nsp=0.3 / alp=-0.6 / cr=2.0）
+    两条都拦得下：它的漏放严格低于其余所有候选，网格确实分出了高下。
+    """
+    rows = [
+        _row("真语音", 0.05, -0.2, 1.2),
+        _row("只有 cr=2.0 拦得住", 0.0, -0.1, 2.2, NONSPEECH),
+        _row("只有 nsp=0.3/alp=-0.6 拦得住", 0.35, -0.7, 0.5, NONSPEECH),
+    ]
+
+    rec = recommend(rows)
+
+    assert rec.chosen_confusion.false_drop == 0
+    assert rec.chosen_confusion.false_pass == 0, "这组阈值两条负样本都拦得下"
+    assert rec.note == "在误杀 = 0 的候选里漏放最少；平手时取离基准最近的。"
+
+
 def test_dropped_rows_lists_what_the_filter_would_throw_away():
     """报告里要逐条列出被丢弃的文本，这份清单就是它的来源。"""
     rows = [_row("留着的", 0.05, -0.2, 1.2), _row("要丢的", 0.95, -1.8, 1.2)]

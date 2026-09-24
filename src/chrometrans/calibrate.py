@@ -206,9 +206,20 @@ def recommend(rows: list[Row],
 
     survivors.sort(key=lambda item: (item[0], item[1]))
     _, _, chosen, chosen_c = survivors[0]
-    return Recommendation(
-        baseline, chosen, base, chosen_c,
-        "在误杀 = 0 的候选里漏放最少；平手时取离基准最近的。")
+    tied = sum(1 for item in survivors if item[0] == chosen_c.false_pass)
+    if tied == 1:
+        note = "在误杀 = 0 的候选里漏放最少；平手时取离基准最近的。"
+    else:
+        # 全平手：漏放最少的候选不止一组，选谁只看离基准多远 —— 那不是测出来的
+        # 优势，别把它读成「过滤有效」。为什么一组都拦不住，实测原因在 config.py
+        # 里 LANGUAGES 上方那段（三条过滤轴在这套栈上不可达）。
+        note = (
+            f"误杀 = 0 的候选里，漏放最少的不止一组：{tied} 组并列漏放 "
+            f"{chosen_c.false_pass} 条，取离基准最近的只是平手时图省事，"
+            "不是测出来的优势——这些数字在这份素材上分不出高下。"
+            "为什么见 config.py 里 LANGUAGES 上方那段实测结论"
+            "（三条过滤轴在这套栈上不可达）。")
+    return Recommendation(baseline, chosen, base, chosen_c, note)
 
 
 # ---- C46：繁体残留 ----
