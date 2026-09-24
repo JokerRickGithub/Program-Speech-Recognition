@@ -63,7 +63,7 @@ def build_translator_chain(cfg) -> ChainTranslator:
 
 
 def keyless_notice(cfg) -> str | None:
-    """没配 key 时返回一句提醒，配了就返回 None。
+    """要翻译又没配 key 时返回一句提醒；配了 key、或单语会话（不翻译）返回 None。
 
     C17 要求免 key 端点不可作为单点依赖。不配 key 时链上确实只剩免 key 层，
     而那个谷歌端点是未公开的 —— 约束的本意是别让这件事**静默**发生

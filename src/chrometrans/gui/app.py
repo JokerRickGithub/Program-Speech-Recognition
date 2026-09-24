@@ -197,9 +197,6 @@ def persist_settings(caption, launcher) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(sys.argv[1:] if argv is None else argv)
-    # 这里的 cfg 只用来生成「没配 key」的提示（纯环境变量，与语言无关）。
-    # 真正跑捕获用的那份在 on_start 里现算 —— 用户可以在启动器里改语言。
-    cfg = load_config()
 
     app = QApplication.instance() or QApplication(sys.argv[:1])
     # 关掉最后一个窗口不退出 —— 悬浮窗是可隐藏的，程序活在托盘里
@@ -247,11 +244,6 @@ def main(argv: list[str] | None = None) -> int:
     relay.error.connect(lambda m: launcher.set_status(m, degraded=True))
     controller.finished.connect(on_finished)
 
-    # 这条提示必须放在 connect 之后：Qt 的信号在没有槽连着时发出去就是丢弃，
-    # 放在窗口创建那儿会静默消失（终端版会打印它，GUI 版不能反而更安静）。
-    if (notice := keyless_notice(cfg.translate)):
-        relay.error.emit(notice)
-
     def on_start(proc) -> None:
         nonlocal publish, server_started
         if controller.running():
@@ -259,15 +251,15 @@ def main(argv: list[str] | None = None) -> int:
             # 这时不能收窗口、不能把按钮切成「停止」—— 什么都还没开始跑。
             relay.error.emit("上一次的捕获还没停下来，请退出程序后重开")
             return
-        try:
-            # 语言在启动器里随时可能被改，所以这里现算，不能用 main 开头那份。
-            # 界面能选的语言一定在 LANGUAGES 里，这个兜底是给「设置文件被手改成
-            # 未知值」留的 —— 宁可拒绝启动并说明，也不要退回英语模型去听俄语
-            # （C38/C39）。
-            session_cfg = load_config(launcher.selected_language())
-        except ValueError as exc:
-            relay.error.emit(str(exc))
-            return
+        # 语言在启动器里随时可能被改，所以这里现算，不能用启动时那份。
+        # C38 的强制点在 --language 的 argparse choices 与下拉由 LANGUAGES 生成处；
+        # gui.json 里被手改的未知值在 settings-load 边界被 coerce 回默认（Task 9），
+        # 且这份语言在按「开始」前就显示在下拉里 —— 不会静默用别的语言去听。
+        session_cfg = load_config(launcher.selected_language())
+        # 没配 key 的提示必须用会话自己这份 cfg：文案点名的语言是这次真正会跑的
+        # 语言，而不是启动时保存/默认的 en —— 用户可能改了下拉再开始。
+        if (notice := keyless_notice(session_cfg.translate)):
+            relay.error.emit(notice)
         if should_start_page_server(no_server=args.no_server,
                                     enabled=launcher.open_page_enabled(),
                                     started=server_started):
