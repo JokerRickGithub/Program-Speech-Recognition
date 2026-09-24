@@ -242,3 +242,29 @@ def test_the_page_server_is_started_at_most_once():
     assert not should_start_page_server(no_server=False, enabled=True, started=True)
     assert not should_start_page_server(no_server=False, enabled=False, started=False)
     assert not should_start_page_server(no_server=True, enabled=True, started=False)
+
+
+def test_startup_path_runs_to_completion(qapp, tmp_path, monkeypatch):
+    """main() 的整条启动路径：建窗口、建托盘、接信号、起事件循环，正常返回 0。
+
+    这一行之前没有任何测试覆盖，`_screens()` 里 QScreen 没有 x()/y()/宽高
+    的错误才会一路活到合并、在用户第一次真跑时崩掉。重复定时器退循环而不是
+    singleShot(0)：后者万一在 exec() 前就被某次 processEvents 消化，main()
+    后面的 app.exec() 会永远阻塞，测试就挂死在那儿。
+    """
+    from PySide6.QtCore import QTimer
+    from chrometrans.gui import app as gui_app
+    from chrometrans.gui import settings as gui_settings
+
+    # 别去读写这台机器上真实的 %APPDATA%/chrometrans/gui.json
+    monkeypatch.setattr(gui_settings, "settings_path",
+                        lambda: tmp_path / "gui.json")
+
+    timer = QTimer()
+    timer.setInterval(50)
+    timer.timeout.connect(qapp.quit)
+    timer.start()
+    try:
+        assert gui_app.main([]) == 0
+    finally:
+        timer.stop()
