@@ -33,6 +33,9 @@ class Engine:
         self._segment_iter_factory = segment_iter_factory
         self._running = False
         self._dropped: list[dict] = []
+        # 单语模式是会话级属性，由 translate.src 是否为 None 派生 —— 不另设
+        # 一个需要和它保持同步的开关（spec §5.1 对 translate_src 就是这么做的）。
+        self._bilingual = cfg.translate.src is not None
 
     # ---- 对外 ----
 
@@ -52,7 +55,8 @@ class Engine:
         self._emit({"event": "status", "data": {
             "state": "running", "model": self._cfg.asr.model,
             "device": self._cfg.asr.device,
-            "session": str(session)}})
+            "session": str(session),
+            "bilingual": self._bilingual}})
 
         # 同分钟内重启会复用 session 目录，而 JSONL 是追加写的（R21）：
         # cue_id 必须从既有内容续上，否则同一份文件里会出现重复 id，
@@ -79,8 +83,11 @@ class Engine:
                 target = self._translate(utterance.text)
                 cue = Cue(id=cue_id, start=utterance.start, end=utterance.end,
                           source=utterance.text, target=target,
-                          src_lang=self._cfg.translate.src,
-                          tgt_lang=self._cfg.translate.tgt)
+                          # src_lang 取实际识别的语言而非 translate.src：
+                          # 单语时后者是 None，而识别的语言是确定无疑的（spec §5.3）
+                          src_lang=self._cfg.asr.language,
+                          tgt_lang=(self._cfg.translate.tgt
+                                    if self._bilingual else None))
 
                 try:
                     writer.append(cue)
@@ -137,6 +144,14 @@ class Engine:
                 **record}})
 
     def _translate(self, text: str) -> str | None:
+        """单语会话直接返回 None，**不调翻译器**（C44）。
+
+        这里不是「翻译失败」，是「本会话不翻译」。区分靠 Cue.tgt_lang：
+        单语时它是 None，双语时是有值的语言码。所以这里也不发任何事件 ——
+        单语会话里一条 error 都不该有。
+        """
+        if not self._bilingual:
+            return None
         try:
             results = asyncio.run(self._translator.translate(
                 [text], self._cfg.translate.src, self._cfg.translate.tgt))
@@ -168,8 +183,17 @@ class Engine:
         """
         if not self._dropped:
             return
-        body = "".join(json.dumps(r, ensure_ascii=False) + "\n"
-                       for r in self._dropped)
+        try:
+            body = "".join(json.dumps(r, ensure_ascii=False) + "\n"
+                           for r in self._dropped)
+        except Exception as exc:
+            # 与 _render_one 同理：这条路径跑在 run() 的 finally 里。
+            # 但这里**不能**说「JSONL 完好，可随时重渲」—— 丢弃记录只在内存里
+            # （self._dropped），JSONL 中没有它们的副本，所以这句要说实话。
+            self._emit({"event": "error", "data": {
+                "message": f"dropped.jsonl 写出失败，本次跳过"
+                           f"（丢弃记录只在内存里，JSONL 中没有它们的副本）：{exc}"}})
+            return
         self._write_view(session, "dropped.jsonl", body)
 
     def _render_srt(self, session: Path, writer: JsonlWriter) -> None:
