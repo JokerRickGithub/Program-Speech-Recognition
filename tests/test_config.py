@@ -50,6 +50,23 @@ def test_every_profile_has_calibration_evidence():
         assert profile.label.strip()
 
 
+def test_calibration_evidence_points_at_a_file_that_exists():
+    """收尾项：calibrated_on 里指向的标定报告必须真存在。
+
+    报告文件改个名这条就该红 —— 否则「两条 calibrated_on 指得到它们」是一句没人
+    盯、悄悄腐烂的话。只在匹配到 docs/ 路径时才断言：en 的 calibrated_on 是
+    参考实现默认值，本就不含 docs/ 路径，一个都不匹配也算过。
+    """
+    import re
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parent.parent  # 仓库根，不写死绝对路径
+    for code, profile in LANGUAGES.items():
+        for path in re.findall(r"docs/[\w/.\-]+\.md", profile.calibrated_on):
+            assert (root / path).is_file(), \
+                f"{code} 的 calibrated_on 指向不存在的文件：{path}"
+
+
 def test_unknown_language_is_rejected_not_defaulted():
     """C38：未知值不得退回默认语言 —— 那等于静默用了另一门语言的阈值。"""
     with pytest.raises(ValueError) as exc:

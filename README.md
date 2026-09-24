@@ -85,6 +85,44 @@ uv run chrometrans
 看 `captions.jsonl` 里每条字幕的 `target` 字段：有中文就是生效了，是 `null` 就是
 所有翻译层都失败了。**终端不会单独为翻译失败报错**——它会安静地退回免 key 那层。
 
+## 音频语言
+
+`--language en|ru|zh`（GUI 在启动器的「音频语言」下拉里选，选择会被记住）。
+
+- `en` / `ru`：识别后翻译成简体中文
+- `zh`：**中文单语模式**，不翻译。中文模式下字幕窗与网页只出一行原文，
+  不会显示「（未翻译）」—— 那是翻译失败的说法，不是本会话不翻译的说法
+
+语言同时决定 ASR 语言与翻译源语言，二者由同一份 `LanguageProfile` 派生
+（`config.py` 的 `LANGUAGES`）。未知语言会拒绝启动并列出可用值。
+
+## 阈值标定
+
+幻觉过滤的三个阈值（`no_speech_prob` / `avg_logprob` / `compression_ratio`）
+按语言各一套，写死在 `config.py` 的 `LANGUAGES` 里，每条都带 `calibrated_on`
+指向标定依据（`docs/superpowers/calibration/`）。改用一组数字要重跑标定：
+
+```bash
+uv run chrometrans-calibrate record --audio <素材> --language ru \
+  --out rows.json
+# 逐条核对 rows.json，把该标 nonspeech 的行的 label 改掉
+uv run chrometrans-calibrate recommend --records rows.json --out report.md
+```
+
+标定判据是「误杀率 = 0」（真语音被丢弃的条数必须为零）；漏放率尽力而为，因为
+silero 切句器本身就拦掉了绝大多数非语音。
+
+**但在这套栈上，过滤器的两条轴目前都不可达，「误杀率 = 0」有一部分是空转的。**
+实测 `no_speech_prob` 恒为 bit-exact 0.0（103 行输出无一例外），使
+`nsp > 门限 且 alp < 门限` 这条 AND 整条不可能成立，`avg_logprob` 门限取任何值
+都不生效；另一条轴 `compression_ratio` 实测最大 1.707，够不到候选网格下限 2.0。
+于是全部 168 组候选加 13 次单轴扫描都丢不掉任何一行，`dropped.jsonl` 在真实素材上
+必然为空。所以「没误杀」不等于「过滤有效」，别拿它当过滤器有效的证据。修这三条轴
+是独立立项；权威结论写在 `config.py` 的 `LANGUAGES` 上方那段注释里，改阈值前先读它。
+
+会话目录下会多一个 `dropped.jsonl`：被幻觉过滤丢掉的每一段都记在里面，带原文与
+三个统计量。误杀是静默的，所以它必须留痕。
+
 ## 运行
 
 ```bash
@@ -175,8 +213,8 @@ export HF_HUB_DISABLE_XET=1
 - **捕获失败会降级到系统级录音。** 连续重连不到 Chrome 时会退回系统级 loopback，
   此时**会混入 Edge、背景音乐等其他程序的声音**。终端与网页都会明确提示「已降级」——
   看到这个提示就说明**声音隔离已经失效**，请尽快重启 Chrome 后重新运行。
-- **目前只做英译中。** 俄语等其它语种尚未接入（配置里的 `src`/`tgt` 目前是
-  `en` → `zh-Hans`）。
+- **源语言限于白名单里的 `en` / `ru` / `zh`。** 其余语种尚未接入；目标语言固定是
+  简体中文（见「音频语言」）。
 - **长时稳定性尚未验证。** 设计上要求连续跑 2 小时以上不出问题，这一项需要你自己实测
   （见下）。
 
