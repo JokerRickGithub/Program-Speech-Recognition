@@ -21,6 +21,11 @@ class CaptureConfig:
     loopback_retry_delay_s: float = 5.0
     loopback_read_timeout_s: float = 2.0   # C1：PortAudio 可能永久阻塞，必须超时
     silence_fill_samples: int = 512   # C1：底层停流时补的静音块大小
+    # 排空缓冲（2026-09-25）。流水线是拉取式的单线程生成器链，翻译卡住时没有
+    # 任何人读管道；而命名管道只有 1 MB ≈ 16.4 秒音频（16 kHz×float32），实测
+    # 翻译最坏卡 17.16 秒 —— 越过这条线就丢音频。给到 60 秒（≈3.84 MB）留足余量。
+    drain_buffer_seconds: float = 60.0
+    drain_join_timeout_s: float = 2.0     # 停止时等排空线程收尾的上限
     # 启动自检（spec §9）：管道块约 10ms，200 块 ≈ 2 秒
     self_check_chunks: int = 200
     self_check_min_rms: float = 1e-4
