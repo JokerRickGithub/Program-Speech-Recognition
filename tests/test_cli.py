@@ -38,6 +38,8 @@ def test_keyless_notice_fires_exactly_when_there_is_no_key():
     assert keyless_notice(TranslateConfig(azure_key="A", google_key=None)) is None
     assert keyless_notice(TranslateConfig(azure_key=None, google_key="G")) is None
     assert keyless_notice(TranslateConfig(azure_key="A", google_key="G")) is None
+    assert keyless_notice(
+        TranslateConfig(azure_key=None, google_key=None, yandex_key="Y")) is None
 
 
 def test_full_chain_when_all_keys_present():
@@ -45,6 +47,25 @@ def test_full_chain_when_all_keys_present():
     chain = build_translator_chain(cfg)
     assert [p.name for p in chain._providers] == [
         "microsoft-azure", "google", "google-free"]
+
+
+def test_yandex_is_a_tier_before_the_keyless_fallback():
+    """带 key 的层永远排在免 key 之前 —— 放后面就是每次先白吃一个失败请求。"""
+    cfg = TranslateConfig(azure_key=None, google_key=None,
+                          yandex_key="Y", yandex_folder_id="F")
+    chain = build_translator_chain(cfg)
+    assert [p.name for p in chain._providers] == ["yandex", "google-free"]
+
+
+def test_yandex_needs_only_the_key_not_the_folder():
+    """服务账号的 API key 不需要 folderId（目录由账号本身决定，见 yandex.py）。
+
+    要是把 folder_id 也当成必填，配了 key 却忘了它的人会得到一个静默缺席的通道。
+    """
+    cfg = TranslateConfig(azure_key=None, google_key=None, yandex_key="Y",
+                          yandex_folder_id=None)
+    assert [p.name for p in build_translator_chain(cfg)._providers] == [
+        "yandex", "google-free"]
 
 
 def test_print_event_reports_every_status_transition(capsys):

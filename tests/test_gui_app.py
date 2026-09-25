@@ -460,11 +460,11 @@ def test_keyless_notice_uses_the_session_language(qapp, tmp_path, monkeypatch,
     on_start 路径：让启动器在事件循环转起来后自动发 start_requested，并把
     CaptureController 换成不真造 engine 的假件，只记下它拿到的 cfg。
     """
-    # 本测试的前提是「没配 key 的机器」（C17 那句提醒）。环境里若真设了
-    # AZURE_TRANSLATOR_KEY / GOOGLE_TRANSLATE_KEY，ru 臂会红、zh 臂会空转，
-    # 所以显式清掉 —— 别删这两行。
+    # 本测试的前提是「没配 key 的机器」（C17 那句提醒）。环境里若真设了这几个，
+    # ru 臂会红、zh 臂会空转，所以显式清掉 —— 别删这几行。
     monkeypatch.delenv("AZURE_TRANSLATOR_KEY", raising=False)
     monkeypatch.delenv("GOOGLE_TRANSLATE_KEY", raising=False)
+    monkeypatch.delenv("YANDEX_TRANSLATE_KEY", raising=False)
 
     import json
 

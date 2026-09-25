@@ -168,6 +168,10 @@ class TranslateConfig:
     azure_key: str | None = None
     azure_region: str = "global"
     google_key: str | None = None
+    # Yandex v2：服务账号的 API key 不需要 folder_id（目录由账号本身决定），
+    # 用户账号的 IAM token 才需要。所以这里两个字段都可为空，见 yandex.py
+    yandex_key: str | None = None
+    yandex_folder_id: str | None = None
     timeout_s: float = 10.0
     max_retries: int = 3              # C19：传输错误有界重试
     retry_base_delay_s: float = 0.5
@@ -208,6 +212,8 @@ def load_config(language: str = DEFAULT_LANGUAGE) -> Config:
         azure_key=os.environ.get("AZURE_TRANSLATOR_KEY"),
         azure_region=os.environ.get("AZURE_TRANSLATOR_REGION", "global"),
         google_key=os.environ.get("GOOGLE_TRANSLATE_KEY"),
+        yandex_key=os.environ.get("YANDEX_TRANSLATE_KEY"),
+        yandex_folder_id=os.environ.get("YANDEX_TRANSLATE_FOLDER_ID"),
     )
     asr = AsrConfig(
         language=profile.asr_language,
