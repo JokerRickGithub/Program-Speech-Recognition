@@ -481,3 +481,36 @@ def test_loopback_path_drains_too():
 
     assert during_stall > 20, (
         f"降级路径在消费者卡住的 0.3 秒里只被读了 {during_stall} 次")
+
+
+def test_stop_reaches_the_underlying_stream_exactly_once():
+    """两条停止路径（CaptureSource.stop() 与生成器的 finally）撞在一起时，
+    底层只能被停一次。
+
+    底层 stop() 最终落到 `CloseHandle`：同一句柄被关两次，若中间它刚被系统
+    复用，关掉的就是别人的对象 —— 概率极低，代价极高。所以这里锁的是「一次」，
+    不是「碰巧没事」。
+    """
+    stops = []
+
+    class Counted:
+        def start(self):
+            pass
+
+        def read(self):
+            time.sleep(0.002)
+            return np.full(160, 0.05, dtype=np.float32)
+
+        def stop(self):
+            stops.append(1)
+
+    source = _source(CaptureConfig(self_check_chunks=1), [],
+                     open_process_stream=lambda pid: Counted())
+    it = source.chunks()
+    next(it)
+
+    source.stop()        # 用户停的
+    source.stop()        # 幂等：重复调用也不该再往下传
+    it.close()           # 生成器 finally 里还会再停一次
+
+    assert stops == [1], f"底层被停了 {len(stops)} 次，必须恰好一次"

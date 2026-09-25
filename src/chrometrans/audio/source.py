@@ -55,6 +55,11 @@ class DrainingStream:
         self._error: BaseException | None = None
         self._closed = False
         self._ready = threading.Condition(threading.Lock())
+        # 收尾串行化：CaptureSource.stop() 与生成器的 finally 都会调 stop()。
+        # 两次 CloseHandle 在句柄恰被复用时关掉的是别人的对象 —— 概率极低，
+        # 代价极高，所以底层只许被停一次。
+        self._teardown = threading.Lock()
+        self._inner_stopped = False
         self._thread: threading.Thread | None = None
 
     def start(self) -> None:
@@ -93,16 +98,20 @@ class DrainingStream:
         with self._ready:
             self._closed = True
             self._ready.notify_all()
-        try:
-            # CancelIoEx 会把阻塞在 ReadFile 里的那次读放掉 —— 没有这一步，
-            # 排空线程醒了、消费线程却还卡在原来的阻塞读上，停止就还是挂起。
-            self._inner.stop()
-        except Exception:
-            pass
-        thread = self._thread
-        if thread is not None:
-            self._thread = None
-            thread.join(timeout=self._join_timeout_s)
+        with self._teardown:
+            if self._inner_stopped:
+                return
+            self._inner_stopped = True
+            try:
+                # CancelIoEx 会把阻塞在 ReadFile 里的那次读放掉 —— 没有这一步，
+                # 排空线程醒了、消费线程却还卡在原来的阻塞读上，停止就还是挂起。
+                self._inner.stop()
+            except Exception:
+                pass
+            thread = self._thread
+            if thread is not None:
+                self._thread = None
+                thread.join(timeout=self._join_timeout_s)
 
     # ---- 排空线程 ----
 
