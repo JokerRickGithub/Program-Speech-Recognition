@@ -6,6 +6,7 @@ import httpx
 from chrometrans.translate.base import (
     TransientTranslationError,
     TranslationError,
+    describe_transport_error,
 )
 
 FREE_ENDPOINT = "https://api-edge.cognitive.microsofttranslator.com/translate"
@@ -51,7 +52,7 @@ class MicrosoftTranslator:
                                          json=build_payload(texts))
         except httpx.HTTPError as exc:
             # 连接重置 / SSL EOF 等瞬时抖动 → 重试而非降级（C19）
-            raise TransientTranslationError(str(exc)) from exc
+            raise TransientTranslationError(describe_transport_error(exc)) from exc
 
         if 500 <= resp.status_code or resp.status_code == 429:
             raise TransientTranslationError(f"HTTP {resp.status_code}")

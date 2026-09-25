@@ -38,6 +38,15 @@ def test_failed_translation_still_has_its_placeholder(source):
 def test_dropped_notices_have_a_branch(source):
     """C45：丢弃提示要在页面上有落点。"""
     assert "addNotice" in source
+
+
+def test_dropped_audio_goes_through_the_notice_branch(source):
+    """排空缓冲溢出丢掉的音频也要走提示分支。
+
+    它是「刚发生的一件事」而不是「当前状态」：塞进页眉会被下一条 status 顶走，
+    而这条信息的全部意义就是让人看见。
+    """
+    assert "'audio_dropped'" in source
     assert "'dropped'" in source or '"dropped"' in source
 
 

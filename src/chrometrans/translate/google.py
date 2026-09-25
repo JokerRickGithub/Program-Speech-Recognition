@@ -6,6 +6,7 @@ import httpx
 from chrometrans.translate.base import (
     TransientTranslationError,
     TranslationError,
+    describe_transport_error,
 )
 
 ENDPOINT = "https://translation.googleapis.com/language/translate/v2"
@@ -43,7 +44,7 @@ class GoogleTranslator:
                     headers={"Content-Type": "application/x-www-form-urlencoded"},
                 )
         except httpx.HTTPError as exc:
-            raise TransientTranslationError(str(exc)) from exc
+            raise TransientTranslationError(describe_transport_error(exc)) from exc
 
         if resp.status_code >= 500 or resp.status_code == 429:
             raise TransientTranslationError(f"HTTP {resp.status_code}")
@@ -94,7 +95,7 @@ class GoogleFreeTranslator:
         try:
             resp = await client.get(FREE_ENDPOINT, params=params)
         except httpx.HTTPError as exc:
-            raise TransientTranslationError(str(exc)) from exc
+            raise TransientTranslationError(describe_transport_error(exc)) from exc
 
         if resp.status_code >= 500 or resp.status_code == 429:
             raise TransientTranslationError(f"HTTP {resp.status_code}")

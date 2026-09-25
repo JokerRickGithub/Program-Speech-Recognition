@@ -93,6 +93,22 @@ def test_transport_error_is_transient(monkeypatch):
         asyncio.run(t.translate(["a"], "en", "zh-Hans"))
 
 
+def test_an_empty_connect_error_still_says_something(monkeypatch):
+    """实测的形状就是 `ConnectError('')`：str() 为空，报出来会是「翻译失败：」。
+
+    走系统代理时 6 次里 2 次如此（2026-09-25 探针）。异常类名是唯一还能给的线索。
+    """
+    def handler(request):
+        raise httpx.ConnectError("")
+
+    t = GoogleFreeTranslator(timeout_s=5.0)
+    monkeypatch.setattr(t, "_make_client", lambda: _client_returning(handler))
+    with pytest.raises(TransientTranslationError) as excinfo:
+        asyncio.run(t.translate(["a"], "en", "zh-Hans"))
+
+    assert str(excinfo.value).strip() == "ConnectError"
+
+
 def test_500_and_429_are_transient_but_404_is_not(monkeypatch):
     def make(status):
         def handler(request):

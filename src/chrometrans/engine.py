@@ -149,6 +149,10 @@ class Engine:
         这里不是「翻译失败」，是「本会话不翻译」。区分靠 Cue.tgt_lang：
         单语时它是 None，双语时是有值的语言码。所以这里也不发任何事件 ——
         单语会话里一条 error 都不该有。
+
+        双语会话里翻译失败则反过来：**必须出声**。这条 cue 照样只存原文（与从前
+        一致），但原因会打到终端 —— 用户报的「英语课很多话直接没有翻译」，在此
+        之前终端上无迹可寻（ChainTranslator 当年把失败静默吞掉了）。
         """
         if not self._bilingual:
             return None
@@ -156,7 +160,8 @@ class Engine:
             results = asyncio.run(self._translator.translate(
                 [text], self._cfg.translate.src, self._cfg.translate.tgt))
         except Exception as exc:
-            self._emit({"event": "error", "data": {"message": f"翻译失败：{exc}"}})
+            self._emit({"event": "error", "data": {
+                "message": f"翻译失败，这句只保留原文：{exc}"}})
             return None
         return results[0] if results else None
 

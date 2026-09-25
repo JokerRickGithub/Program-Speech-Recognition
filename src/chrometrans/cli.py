@@ -35,12 +35,14 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 
 
 def build_translator_chain(cfg) -> ChainTranslator:
-    """Tier 1 Azure → Tier 2 Google(key) → 免 key 兜底（谷歌 → 微软 Edge）。
+    """Tier 1 Azure → Tier 2 Google(key) → 免 key 兜底（谷歌）。
 
     带 key 的层放最前面：放最后只会让每次翻译先白吃一个失败请求。
-    免 key 这两层的实测结论（2026-09-23）不同，所以次序有别：谷歌那条可用，
-    微软 Edge 那条（`edge.microsoft.com/translate/auth`）已 404 下线。死的那层
-    放最后，只有谷歌也失败时才会为它多花一次请求。
+
+    2026-09-25 去掉了原来排在最后的免 key 微软层（`api-edge.cognitive...`，
+    与 `edge.microsoft.com/translate/auth` 同一条已下线的路）。留着它的代价不是
+    「多一次请求」那么轻：每次全体失败都要先等它 404 一次，而失败本身已经慢
+    （实测重试阶梯 6 / 12 / 17 秒），这一层是往用户的卡顿上再加一段。
 
     ⚠️ 不配 key 时这条链**只剩免 key 层**，也就是 C17 明令禁止的「免 key 端点
     作为单点依赖」—— 谷歌那个端点同样是未公开的，可能像微软 Edge 的 auth 端点
@@ -57,8 +59,6 @@ def build_translator_chain(cfg) -> ChainTranslator:
         providers.append(GoogleTranslator(api_key=cfg.google_key,
                                           timeout_s=cfg.timeout_s))
     providers.append(GoogleFreeTranslator(timeout_s=cfg.timeout_s))
-    providers.append(MicrosoftTranslator(api_key=None, region=cfg.azure_region,
-                                         timeout_s=cfg.timeout_s))
     return ChainTranslator(providers, cfg)
 
 
@@ -152,9 +152,11 @@ def print_event(event: dict) -> None:
                   file=sys.stderr)
     elif state == "loading":
         print(f"— {data.get('message')}", file=sys.stderr)
-    elif state in ("degraded", "warning", "dropped"):
-        # dropped 与这两个同类：都是「有东西没按预期走」。C45 要求它可见，
-        # 而终端是唯一不会被下一句字幕顶走的地方 —— 它还有 scrollback。
+    elif state in ("degraded", "warning", "dropped", "audio_dropped"):
+        # dropped / audio_dropped 与这两个同类：都是「有东西没按预期走」。
+        # C45 要求丢弃可见，而终端是唯一不会被下一句字幕顶走的地方 —— 它还有
+        # scrollback。audio_dropped 是排空缓冲溢出丢掉的音频：不报的话用户只
+        # 看到字幕少了几句，原因无处可查。
         print(f"! {data.get('message')}", file=sys.stderr)
     elif state == "stopped":
         print("— 已停止", file=sys.stderr)
