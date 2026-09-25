@@ -80,3 +80,119 @@ def test_print_event_keeps_stdout_clean_for_cues(capsys):
     assert "hello" in out and "你好" in out
     assert "已停止" not in out, "状态不能污染 stdout"
     assert "已停止" in err
+
+
+def test_parse_args_language_defaults_to_english():
+    from chrometrans.config import DEFAULT_LANGUAGE
+
+    assert parse_args([]).language == DEFAULT_LANGUAGE
+
+
+def test_parse_args_rejects_unknown_language_and_lists_the_choices(capsys):
+    """C38：未知值拒绝启动并列出可用值，不得静默退回默认语言。"""
+    with pytest.raises(SystemExit) as exc:
+        parse_args(["--language", "klingon"])
+
+    assert exc.value.code != 0
+    err = capsys.readouterr().err
+    assert "klingon" in err
+    assert "ru" in err and "zh" in err, "要列出可用值"
+
+
+def test_language_choices_come_from_the_profile_table():
+    """加语言时 CLI 不该还要单独改一处。"""
+    from chrometrans.config import LANGUAGES
+
+    for code in LANGUAGES:
+        assert parse_args(["--language", code]).language == code
+
+
+def test_main_forwards_the_language_choice(monkeypatch):
+    """最危险的是 main 忘了把 args.language 传下去 —— 那就退回英语模型听俄语
+    （C39）。这条测的就是那一行。
+
+    只需要挡掉 Engine 一个：`WhisperEngine(cfg.asr)` 构造时不加载模型、
+    `build_translator_chain` 不联网、`segment_source` 返回的是个还没被调用的
+    工厂 —— 真正的重活都在 Engine.run 里，而 NoopEngine 不跑它。
+    """
+    import chrometrans.cli as cli
+    from chrometrans.config import Config
+
+    seen = {}
+
+    def fake_load(language=cli.DEFAULT_LANGUAGE):
+        seen["language"] = language
+        return Config()
+
+    class NoopEngine:
+        def __init__(self, **kwargs): pass
+        def run(self): pass
+        def stop(self): pass
+
+    monkeypatch.setattr(cli, "load_config", fake_load)
+    monkeypatch.setattr(cli, "Engine", NoopEngine)
+
+    assert cli.main(["--no-server", "--language", "ru"]) == 0
+    assert seen["language"] == "ru"
+
+
+def test_print_event_reports_dropped_segments(capsys):
+    """C45：丢弃在终端上必须是可见的。
+
+    与 warning / degraded 同类：都是「有东西没按预期走」。
+    """
+    print_event({"event": "status", "data": {
+        "state": "dropped", "message": "丢弃疑似幻觉：谢谢观看", "text": "谢谢观看",
+        "no_speech_prob": 0.95, "avg_logprob": -1.8, "compression_ratio": 1.1}})
+
+    out, err = capsys.readouterr()
+    assert "丢弃疑似幻觉" in err
+    assert "谢谢观看" in err
+    assert "谢谢观看" not in out, "状态不能污染 stdout"
+
+
+def test_running_line_reports_the_session_mode(capsys):
+    """C44：单语会话下「不翻译」是设计如此，值得说出来。
+
+    C43 要求三个显示面逐字一致 —— 中间点、空格、后缀，错一个都是违约，
+    子串检查发现不了。所以这里锁整行相等，与 GUI 测试同法；网页那条锁在
+    tests/test_static_index.py 的 test_the_running_line_reports_the_session_mode。
+    """
+    print_event({"event": "status", "data": {
+        "state": "running", "model": "large-v3-turbo", "device": "cuda",
+        "bilingual": True}})
+    err = capsys.readouterr().err.strip()
+    assert err == "— 运行中 · large-v3-turbo · cuda · 翻译中"
+
+    print_event({"event": "status", "data": {
+        "state": "running", "model": "large-v3-turbo", "device": "cuda",
+        "bilingual": False}})
+    err = capsys.readouterr().err.strip()
+    assert err == "— 运行中 · large-v3-turbo · cuda · 不翻译"
+
+    print_event({"event": "status", "data": {
+        "state": "running", "pid": 123, "bilingual": False}})
+    err = capsys.readouterr().err.strip()
+    assert err == "— 运行中 · 按进程捕获（PID 123） · 不翻译"
+
+
+def test_running_line_says_nothing_about_mode_when_the_key_is_missing(capsys):
+    """键缺失时什么也不追加 —— 把「不知道」说成「不翻译」是最危险的静默说谎。"""
+    print_event({"event": "status", "data": {
+        "state": "running", "model": "large-v3-turbo", "device": "cuda"}})
+
+    err = capsys.readouterr().err.strip()
+    assert err == "— 运行中 · large-v3-turbo · cuda"
+
+
+def test_keyless_notice_is_silent_for_a_monolingual_session():
+    """C44：单语会话不翻译，提醒「没配 key」是凭空造出的失败面；而且原文案把
+    中文说成谷歌翻出来的目标，在 zh profile 里中文是源语言，那句话是假的。
+    """
+    from dataclasses import replace
+
+    from chrometrans.config import load_config
+
+    base = replace(load_config("zh").translate, azure_key=None, google_key=None)
+    assert keyless_notice(base) is None, "单语会话不该提醒没配 key"
+    assert keyless_notice(replace(base, src="en")) is not None, "会翻译就得提醒（C17）"

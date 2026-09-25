@@ -10,7 +10,33 @@ from typing import Callable, Iterator
 
 from chrometrans.audio.segmenter import Segment, Segmenter
 from chrometrans.audio.source import CaptureSource
-from chrometrans.config import Config
+from chrometrans.config import Config, is_bilingual
+
+
+def _with_session_mode(emit, cfg):
+    """给捕获源发出的 running 事件补上会话模式。
+
+    CaptureSource 只拿到 CaptureConfig（见上面 replace 那一步），够不到
+    translate.src，而它也会发一条 running（带 pid）—— 那条发在引擎那条之后，
+    会把带模式的那行顶掉。三个显示面都按「键缺失就不追加」处理，于是模式在
+    稳定状态下是看不见的，而让用户看得出「本会话不翻译」正是这个字段存在的理由
+    （spec §5.3 / C44）。
+
+    在这里补、而不是给 CaptureSource 加参数：捕获层不该知道翻译层的事，
+    而这里是唯一同时握着 Config 和会话的地方。
+    """
+    bilingual = is_bilingual(cfg)
+
+    def wrapped(event):
+        data = event.get("data")
+        if (event.get("event") == "status"
+                and isinstance(data, dict)
+                and data.get("state") == "running"
+                and "bilingual" not in data):
+            event = {**event, "data": {**data, "bilingual": bilingual}}
+        emit(event)
+
+    return wrapped
 
 
 def segment_source(cfg: Config, emit: Callable[[dict], None],
@@ -24,7 +50,8 @@ def segment_source(cfg: Config, emit: Callable[[dict], None],
     """
     def factory() -> Iterator[Segment]:
         capture_cfg = replace(cfg.capture, process_names=process_names)
-        source = CaptureSource(capture_cfg, emit, resolve_pid=resolve_pid)
+        source = CaptureSource(capture_cfg, _with_session_mode(emit, cfg),
+                               resolve_pid=resolve_pid)
         segmenter = Segmenter(cfg.segmenter)
         try:
             for chunk in source.chunks():

@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from chrometrans.config import DEFAULT_LANGUAGE, LANGUAGES
 from chrometrans.gui.processes import AudioProcess, list_audio_processes
 
 REFRESH_MS = 2000
@@ -45,6 +46,11 @@ class LauncherWindow(QWidget):
         self._start_btn = QPushButton("开始", self)
         self._page_check = QCheckBox("同时开启网页", self)
         self._page_check.setChecked(False)
+        self._lang_combo = QComboBox(self)
+        # 项与顺序都来自 LANGUAGES：加语言时这里不用跟着改
+        for code, profile in LANGUAGES.items():
+            self._lang_combo.addItem(profile.label, code)
+        self._lang_combo.setCurrentIndex(list(LANGUAGES).index(DEFAULT_LANGUAGE))
 
         buttons = QHBoxLayout()
         buttons.addWidget(self._refresh_btn)
@@ -53,6 +59,8 @@ class LauncherWindow(QWidget):
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel("选择要捕获的程序：", self))
         layout.addWidget(self._combo)
+        layout.addWidget(QLabel("音频语言：", self))
+        layout.addWidget(self._lang_combo)
         layout.addWidget(self._hint_label)
         layout.addLayout(buttons)
         layout.addWidget(self._page_check)
@@ -70,6 +78,28 @@ class LauncherWindow(QWidget):
         self._timer.start()
 
         self.refresh()
+
+    # ---- 音频语言 ----
+
+    def selected_language(self) -> str:
+        return self._lang_combo.currentData()
+
+    def set_language(self, code: str) -> None:
+        index = self._lang_combo.findData(code)
+        if index >= 0:
+            self._lang_combo.setCurrentIndex(index)
+
+    def language_count(self) -> int:
+        """给测试用：下拉项数。"""
+        return self._lang_combo.count()
+
+    def language_at(self, index: int) -> str:
+        """给测试用：第 index 项的 code。"""
+        return self._lang_combo.itemData(index)
+
+    def language_editable(self) -> bool:
+        """给测试用：下拉是否可用。"""
+        return self._lang_combo.isEnabled()
 
     # ---- 列表 ----
 
@@ -138,6 +168,9 @@ class LauncherWindow(QWidget):
 
     def set_capturing(self, capturing: bool) -> None:
         self._capturing = capturing
+        # 换语言要重建 engine（换阈值集、换解码配置），而捕获中禁止重入 ——
+        # 所以这里禁用，不是「点了没反应」。
+        self._lang_combo.setEnabled(not capturing)
         # 已经在捕获就不必再轮询列表了
         if capturing:
             self._timer.stop()

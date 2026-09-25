@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 
 from chrometrans.gui.settings import GuiSettings
 from chrometrans.gui.transcript import Transcript
+from chrometrans.models import is_monolingual
 
 MIN_FONT_PX = 10
 MAX_FONT_PX = 72
@@ -27,14 +28,30 @@ MAX_OPACITY = 1.0
 _BG = "#16181d"
 
 
+_NOTICE_COLOR = "#8a7a4a"
+
+
 def render_cue_html(cue: dict, font_px: int) -> str:
-    """一条字幕 → 一段 HTML。原文灰字在上、译文白字在下。
+    """一条字幕 → 一段 HTML。
 
     顺序与 captions.srt 和网页一致 —— 同一份内容在三个地方不该有三种排法。
     文本必须转义：ASR 输出里出现 `<` 或 `&` 时，当 HTML 解释会吃掉半句话。
     """
+    notice = cue.get("notice")
+    if notice:
+        return (f'<div style="color:{_NOTICE_COLOR};font-style:italic;'
+                f'font-size:{max(MIN_FONT_PX, font_px - 6)}px;'
+                f'line-height:1.35">⊘ {html_escape.escape(notice)}</div>')
+
     source = html_escape.escape(cue.get("source") or "")
     target = cue.get("target")
+    # C44：故意不翻译（单语会话）不得表现为翻译失败。判据是 tgt_lang，
+    # 与 output/srt.py、output/markdown.py 用的是同一个 —— 四处不一致是
+    # C43 明令禁止的。
+    if is_monolingual(cue):
+        return (f'<div style="color:#f5f6f8;font-size:{font_px + 8}px;'
+                f'line-height:1.35">{source}</div>')
+
     parts = [
         f'<div style="color:#9aa0a6;font-size:{font_px}px;'
         f'line-height:1.35">{source}</div>'
@@ -104,6 +121,22 @@ class CaptionWindow(QWidget):
     def clear_cues(self) -> None:
         self._transcript.clear()
         self._view.clear()
+
+    def add_notice(self, text: str) -> None:
+        """插一条提示行（C45 的丢弃提示走这里）。
+
+        进的是同一个 Transcript 模型，不是直接 append 到控件：改字号或淘汰最旧
+        一条都会触发 _rerender 重建整份文档，只 append 的写法会在那一刻凭空
+        消失 —— 而「凭空消失」正是 C45 要消灭的东西。
+
+        空文本不是提示：render_cue_html 里 `if notice:` 对空串为假，会一路落回
+        双语分支，把空 source + target=None 渲染成「（未翻译）」—— C44 要消灭的
+        「翻译失败」标记，出现在根本没尝试翻译的语境里。
+        """
+        text = (text or "").strip()
+        if not text:
+            return
+        self.add_cue({"notice": text})
 
     def _rerender(self) -> None:
         """照着留下的字幕重渲一遍，重建前后保住滚动位置。

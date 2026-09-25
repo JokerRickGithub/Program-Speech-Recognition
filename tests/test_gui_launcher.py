@@ -152,3 +152,44 @@ def test_capturing_state_swaps_start_for_stop(launcher):
 
     launcher.set_capturing(False)
     assert launcher.start_enabled() is False, "列表空时开始仍然不可点"
+
+
+def test_language_dropdown_lists_every_language_in_table_order(launcher):
+    """下拉项与顺序都由 LANGUAGES 生成 —— 加语言时这里不该还要单独改一处。"""
+    from chrometrans.config import LANGUAGES
+
+    got = [launcher.language_at(i) for i in range(launcher.language_count())]
+
+    assert got == list(LANGUAGES)
+
+
+def test_selected_language_defaults_to_english(launcher):
+    from chrometrans.config import DEFAULT_LANGUAGE
+
+    assert launcher.selected_language() == DEFAULT_LANGUAGE
+
+
+def test_set_language_selects_that_code(launcher):
+    launcher.set_language("zh")
+
+    assert launcher.selected_language() == "zh"
+
+
+def test_set_language_ignores_an_unknown_code(launcher):
+    """界面只可能产出白名单里的值；给个野值不该把当前选择弄丢。"""
+    launcher.set_language("zh")
+    launcher.set_language("klingon")
+
+    assert launcher.selected_language() == "zh"
+
+
+def test_language_dropdown_is_disabled_while_capturing(launcher):
+    """换语言要重建 engine，而捕获中本来就禁止重入 —— 所以下拉要禁用，
+    不能只是「点了没反应」。"""
+    assert launcher.language_editable()
+
+    launcher.set_capturing(True)
+    assert not launcher.language_editable()
+
+    launcher.set_capturing(False)
+    assert launcher.language_editable()

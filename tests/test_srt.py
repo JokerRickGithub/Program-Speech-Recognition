@@ -54,3 +54,41 @@ def test_render_never_splits_a_cue_on_messy_text():
 def test_render_omits_missing_translation():
     text = render([_cue(1, 0.0, 1.0, tgt=None)])
     assert text == ("1\n00:00:00,000 --> 00:00:01,000\nhello\n\n")
+
+
+def _mono(i=1, start=0.0, end=1.0, src="你好", tgt=None):
+    """单语会话的 cue：tgt_lang 是 None（C44 的判据）。"""
+    return Cue(id=i, start=start, end=end, source=src, target=tgt,
+               src_lang="zh", tgt_lang=None)
+
+
+def test_render_monolingual_omits_the_target_line():
+    """单语会话的输出格式逐字正确：编号/时间戳/原文，且不带译文行。
+
+    只锁格式，不锁「判据」：本测试的 target 是 None，srt 里原本的
+    `if cue.target:` 就已为假，锁不住「单语会话里混进带译文的 cue 也不出
+    译文」这条分支 —— 那条判据由隔壁的
+    test_render_monolingual_ignores_a_stray_target 锁着。
+    """
+    text = render([_mono()])
+
+    assert text == "1\n00:00:00,000 --> 00:00:01,000\n你好\n\n"
+    assert "未翻译" not in text
+
+
+def test_render_monolingual_ignores_a_stray_target():
+    """会话级属性说了算：单语会话里即使混进一条带译文的 cue 也不出译文。
+
+    否则「单语」就退化成逐条判断，四个渲染器迟早各判各的。
+    """
+    text = render([_mono(tgt="hello")])
+
+    assert "hello" not in text
+
+
+def test_blank_line_rule_holds_in_monolingual_mode():
+    """C22 回归：单语分支不能把 cue 内的空行规则带坏。"""
+    cues = [_mono(i, float(i), float(i) + 1.0, src="一\n\n二") for i in range(3)]
+
+    blocks = [b for b in render(cues).split("\n\n") if b.strip()]
+    assert len(blocks) == len(cues)

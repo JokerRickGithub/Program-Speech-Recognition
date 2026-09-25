@@ -3,7 +3,7 @@ from datetime import datetime
 import numpy as np
 
 from chrometrans.audio.segmenter import Segment
-from chrometrans.config import Config, OutputConfig, TranslateConfig
+from chrometrans.config import AsrConfig, Config, OutputConfig, TranslateConfig
 from chrometrans.engine import Engine
 
 
@@ -19,20 +19,27 @@ class StubTranslator:
         return [f"译:{t}" for t in texts]
 
 
-def _engine(tmp_path, translator, segments, utterance="hello world"):
-    events = []
+def _stub_asr(utterance: str):
+    from chrometrans.asr.whisper_engine import TranscribeResult, Utterance
 
     class StubAsr:
         def load(self): pass
+
         def transcribe(self, seg):
-            from chrometrans.asr.whisper_engine import Utterance
-            return Utterance(start=seg.start, end=seg.end, text=utterance)
+            return TranscribeResult(
+                utterance=Utterance(start=seg.start, end=seg.end, text=utterance))
+
+    return StubAsr()
+
+
+def _engine(tmp_path, translator, segments, utterance="hello world"):
+    events = []
 
     eng = Engine(
         cfg=Config(output=OutputConfig(output_root=tmp_path),
                    translate=TranslateConfig()),
         on_event=events.append,
-        asr=StubAsr(),
+        asr=_stub_asr(utterance),
         translator=translator,
         segments=segments,
     )
@@ -83,8 +90,10 @@ def test_asr_failure_does_not_stop_pipeline(tmp_path):
             self.n += 1
             if self.n == 2:
                 raise RuntimeError("cuda oops")
-            from chrometrans.asr.whisper_engine import Utterance
-            return Utterance(start=seg.start, end=seg.end, text=f"line {self.n}")
+            from chrometrans.asr.whisper_engine import TranscribeResult, Utterance
+            return TranscribeResult(
+                utterance=Utterance(start=seg.start, end=seg.end,
+                                    text=f"line {self.n}"))
 
     events = []
     eng = Engine(cfg=Config(output=OutputConfig(output_root=tmp_path)),
@@ -319,7 +328,8 @@ def test_loading_status_is_emitted_before_the_model_is_loaded(tmp_path):
             order.append("load")
 
         def transcribe(self, segment):
-            return None
+            from chrometrans.asr.whisper_engine import TranscribeResult
+            return TranscribeResult(utterance=None)
 
     class RecordingTranslator:
         async def translate(self, texts, src, tgt):
@@ -341,3 +351,197 @@ def test_loading_status_is_emitted_before_the_model_is_loaded(tmp_path):
     assert "large-v3-turbo" in loading[0]["data"]["message"], "要说是哪个模型"
     assert order == ["loading", "load", "running", "stopped"], \
         "loading 必须在 asr.load() 之前发出，否则用户看到的是几十秒卡死"
+
+
+def test_dropped_segments_are_reported_with_their_text(tmp_path):
+    """C45：丢弃必须可见，且要带着文本。
+
+    只说「丢了 1 段」用户判断不了那是垃圾还是真话 —— 而判断正是这个事件的全部
+    目的。
+    """
+    from chrometrans.asr.whisper_engine import Dropped, TranscribeResult, Utterance
+
+    events = []
+
+    class DroppingAsr:
+        def load(self): pass
+
+        def transcribe(self, seg):
+            return TranscribeResult(
+                utterance=Utterance(start=seg.start, end=seg.end, text="留下的话"),
+                dropped=(Dropped(text="编出来的话", no_speech_prob=0.95,
+                                 avg_logprob=-1.8, compression_ratio=1.1),))
+
+    eng = Engine(cfg=Config(output=OutputConfig(output_root=tmp_path)),
+                 on_event=events.append, asr=DroppingAsr(),
+                 translator=StubTranslator(),
+                 segments=[Segment(1, 0.0, 2.0, np.zeros(32000, dtype=np.float32))])
+    eng.run()
+
+    drops = [e["data"] for e in events
+             if e["event"] == "status" and e["data"].get("state") == "dropped"]
+    assert len(drops) == 1
+    assert "编出来的话" in drops[0]["text"]
+    assert drops[0]["compression_ratio"] == 1.1, "三个统计量要一并带上"
+    assert [e["data"]["source"] for e in events if e["event"] == "cue"] == ["留下的话"]
+
+
+def test_dropped_segments_land_in_dropped_jsonl(tmp_path):
+    """事件是瞬时的（字幕窗、网页的状态栏都会被下一句顶走），而 C45 要支撑的
+    「试用完再回来调阈值」是事后行为 —— 只在事件里报等于没报。"""
+    import json as jsonlib
+
+    from chrometrans.asr.whisper_engine import Dropped, TranscribeResult
+
+    class AllDroppedAsr:
+        def load(self): pass
+
+        def transcribe(self, seg):
+            return TranscribeResult(utterance=None, dropped=(
+                Dropped(text="编的", no_speech_prob=0.9, avg_logprob=-1.7,
+                        compression_ratio=1.2),))
+
+    eng = Engine(cfg=Config(output=OutputConfig(output_root=tmp_path)),
+                 on_event=lambda e: None, asr=AllDroppedAsr(),
+                 translator=StubTranslator(),
+                 segments=[Segment(1, 0.0, 2.0, np.zeros(32000, dtype=np.float32))])
+    eng.run()
+
+    session = next(tmp_path.iterdir())
+    lines = (session / "dropped.jsonl").read_text(encoding="utf-8").splitlines()
+    assert [jsonlib.loads(l)["text"] for l in lines] == ["编的"]
+
+
+def test_a_clean_session_writes_no_dropped_file(tmp_path):
+    """没丢东西就不该多一个空文件 —— 空文件会被读成「丢了但没记下来」。"""
+    eng, _ = _engine(tmp_path, StubTranslator(),
+                     [Segment(1, 0.0, 2.0, np.zeros(32000, dtype=np.float32))])
+    eng.run()
+
+    assert not (next(tmp_path.iterdir()) / "dropped.jsonl").exists()
+
+
+def test_dropped_text_in_the_event_is_bounded(tmp_path):
+    """幻觉可以长到整段。事件要过 WebSocket，不该被一条文本撑爆。"""
+    from chrometrans.asr.whisper_engine import Dropped, TranscribeResult
+
+    long_text = "啊" * 5000
+    events = []
+
+    class LongDropAsr:
+        def load(self): pass
+
+        def transcribe(self, seg):
+            return TranscribeResult(utterance=None, dropped=(
+                Dropped(text=long_text, no_speech_prob=0.9, avg_logprob=-1.7,
+                        compression_ratio=1.2),))
+
+    eng = Engine(cfg=Config(output=OutputConfig(output_root=tmp_path)),
+                 on_event=events.append, asr=LongDropAsr(),
+                 translator=StubTranslator(),
+                 segments=[Segment(1, 0.0, 2.0, np.zeros(32000, dtype=np.float32))])
+    eng.run()
+
+    drop = [e["data"] for e in events if e["data"].get("state") == "dropped"][0]
+    assert len(drop["message"]) < 500, "事件里的文本要截断"
+    assert len(drop["text"]) == 5000, "落盘的原文不截断"
+
+
+def test_monolingual_session_never_calls_the_translator(tmp_path):
+    """C44：单语会话不调翻译器，也不发翻译失败事件。
+
+    「被调用即失败」比断言结果更硬 —— 结果是 None 也可能是翻译失败换来的，
+    而那正是要区分的东西。
+    """
+    class ExplodingTranslator:
+        name = "boom"
+
+        async def translate(self, texts, src, tgt):
+            raise AssertionError("单语会话不得调用翻译器（C44）")
+
+    segs = [Segment(1, 0.0, 2.0, np.zeros(32000, dtype=np.float32))]
+    events = []
+    eng = Engine(
+        cfg=Config(output=OutputConfig(output_root=tmp_path),
+                   asr=AsrConfig(language="zh"),
+                   translate=TranslateConfig(src=None, tgt="zh-Hans")),
+        on_event=events.append, asr=_stub_asr("这句话"),
+        translator=ExplodingTranslator(), segments=segs)
+
+    eng.run()
+
+    cue = [e["data"] for e in events if e["event"] == "cue"][0]
+    assert cue["source"] == "这句话"
+    assert cue["target"] is None
+    assert cue["tgt_lang"] is None, "tgt_lang 为 None = 本会话不翻译（spec §5.3）"
+    assert cue["src_lang"] == "zh", "src_lang 取实际识别的语言，永不为 None"
+    assert not [e for e in events if e["event"] == "error"], \
+        "故意不翻译不得表现为翻译失败（C44）"
+
+
+def test_target_language_is_recorded_in_bilingual_sessions(tmp_path):
+    """反向也要锁：双语会话的 tgt_lang 必须保持有值，否则上一条就成了
+    「不管什么会话都写 None」。"""
+    segs = [Segment(1, 0.0, 2.0, np.zeros(32000, dtype=np.float32))]
+    eng, events = _engine(tmp_path, StubTranslator(), segs)
+
+    eng.run()
+
+    cue = [e["data"] for e in events if e["event"] == "cue"][0]
+    assert cue["tgt_lang"] == "zh-Hans"
+    assert cue["target"] == "译:hello world"
+
+
+def test_running_status_reports_bilingual_both_ways(tmp_path):
+    """会话级标志由启动的 status 事件给出（spec §5.3）—— 两个方向都断言。"""
+    segs = []
+
+    def bilingual_flag(cfg):
+        events = []
+        Engine(cfg=cfg, on_event=events.append, asr=_stub_asr("x"),
+               translator=StubTranslator(), segments=segs).run()
+        return [e["data"]["bilingual"] for e in events
+                if e["event"] == "status" and e["data"].get("state") == "running"][0]
+
+    assert bilingual_flag(Config(output=OutputConfig(output_root=tmp_path / "a"))) is True
+    assert bilingual_flag(Config(output=OutputConfig(output_root=tmp_path / "b"),
+                                 translate=TranslateConfig(src=None))) is False
+
+
+def test_dropped_view_failure_does_not_escape(tmp_path):
+    """R22 同理：这条路径跑在 run() 的 finally 里，抛出去会吞掉 stopped 事件。
+
+    今天 json.dumps 在 Dropped 的字段类型下抛不出来，但那份不变量住在另一个模块
+    —— 把保证做成结构性的，而不是文档性的。
+    """
+    eng, events = _engine(tmp_path, StubTranslator(), [])
+    eng._dropped = [{"text": object()}]
+
+    eng.run()
+
+    assert any(e["event"] == "status" and e["data"].get("state") == "stopped"
+               for e in events), "stopped 事件必须发得出来"
+    assert any(e["event"] == "error" and "dropped.jsonl" in e["data"]["message"]
+               for e in events)
+    assert not (next(tmp_path.iterdir()) / "dropped.jsonl").exists()
+
+
+def test_dropped_write_failure_reports_the_truth(tmp_path, monkeypatch):
+    """写入失败时那句话也必须是真的：丢弃记录只在内存里，没有 JSONL 副本可重渲。"""
+    def boom(*args, **kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr("chrometrans.engine.write_with_fallback", boom)
+    eng, events = _engine(tmp_path, StubTranslator(), [])
+    eng._dropped = [{"text": "编的", "no_speech_prob": 0.9,
+                     "avg_logprob": -1.7, "compression_ratio": 1.2}]
+
+    eng.run()
+
+    msgs = [e["data"]["message"] for e in events
+            if e["event"] == "error" and "dropped.jsonl" in e["data"]["message"]]
+    assert msgs, "写入失败必须说出来"
+    assert "可随时重渲" not in msgs[0], "丢弃记录不在 JSONL 里，这句话是假的"
+    assert "只在内存" in msgs[0]
+    assert any(e["event"] == "status" and e["data"].get("state") == "stopped"
+               for e in events), "重渲失败不得吞掉 stopped 事件"

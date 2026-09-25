@@ -10,6 +10,8 @@ import os
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 
+from chrometrans.config import DEFAULT_LANGUAGE, LANGUAGES
+
 _INT_FIELDS = ("x", "y", "width", "height", "font_px")
 
 
@@ -21,6 +23,7 @@ class GuiSettings:
     height: int = 220
     font_px: int = 22
     opacity: float = 0.9
+    language: str = DEFAULT_LANGUAGE
 
 
 def settings_path() -> Path:
@@ -41,6 +44,11 @@ def _coerce(raw: dict) -> GuiSettings:
     value = raw.get("opacity")
     ok = isinstance(value, (int, float)) and not isinstance(value, bool)
     out["opacity"] = float(value) if ok else default.opacity
+    # 白名单校验，与 CLI 的 choices 同源（C38）。非字符串一并退默认 ——
+    # 沿用这个函数「坏字段只连累自己」的既有策略。
+    value = raw.get("language")
+    out["language"] = (value if isinstance(value, str) and value in LANGUAGES
+                       else default.language)
     return GuiSettings(**out)
 
 
@@ -86,3 +94,12 @@ def restore_position(s: GuiSettings,
         if x <= s.x < x + w and y <= s.y < y + h:
             return s
     return _centered(s, screens[0])
+
+
+def with_language(s: GuiSettings, language: str) -> GuiSettings:
+    """把当前选中的语言并进要保存的设置。
+
+    单独提出来是为了能离线测：`gui/app.py` 那边够不到，而「存了不读」与
+    「读了不存」恰恰是最容易漏的两件事。
+    """
+    return replace(s, language=language)

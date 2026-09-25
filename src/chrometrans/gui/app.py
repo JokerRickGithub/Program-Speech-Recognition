@@ -19,6 +19,7 @@ from chrometrans.gui.processes import make_resolver
 from chrometrans.gui.relay import EventRelay
 from chrometrans.gui.settings import load as load_settings
 from chrometrans.gui.settings import restore_position, save as save_settings
+from chrometrans.gui.settings import with_language
 
 STOP_TIMEOUT_S = 10.0
 
@@ -147,9 +148,55 @@ def should_start_page_server(*, no_server: bool, enabled: bool,
     return not no_server and enabled and not started
 
 
+def dispatch_status(data: dict, *, launcher, caption) -> None:
+    """把一条 status 事件分发给界面。
+
+    提到模块级只有一个理由：它是「事件 → 界面」的唯一映射，原来埋在 main() 的
+    闭包里，测试够不到 —— 新增的 dropped 分支尤其需要被测到（C45 要的就是它
+    可见）。
+    """
+    state = data.get("state")
+    if state == "loading":
+        launcher.set_status(data.get("message", "正在加载模型…"))
+    elif state == "running":
+        # 模式由会话级的 bilingual 派生（Task 6）。与 cli.print_event、
+        # index.html 的 setStatus() 逐字一致（C43）。键缺失时什么也不追加。
+        mode = data.get("bilingual")
+        suffix = "" if mode is None else (" · 翻译中" if mode else " · 不翻译")
+        if data.get("model"):
+            launcher.set_status(
+                f"运行中 · {data['model']} · {data['device']}{suffix}")
+        else:
+            launcher.set_status(
+                f"运行中 · 按进程捕获（PID {data.get('pid')}）{suffix}")
+    elif state == "warning":
+        launcher.set_status(data.get("message", ""))
+    elif state == "degraded":
+        # 原文照搬并标红 —— 降级意味着声音隔离已经失效（原规格 §5.1）
+        launcher.set_status(data.get("message", ""), degraded=True)
+    elif state == "dropped":
+        # C45：这张窗口是捕获期间唯一看得见的东西（启动器在 on_start 里已
+        # hide），所以提示要落在这里，而不是只写进启动器那个看不见的状态行。
+        message = data.get("message", "")
+        caption.add_notice(message)
+        launcher.set_status(message)
+    elif state == "stopped":
+        launcher.set_status("已停止")
+
+
+def persist_settings(caption, launcher) -> None:
+    """把语言与窗口几何一起写回 gui.json。
+
+    模块级而不是 main 里的闭包：闭包只能靠「点一次停止再重启程序」验，
+    而那条路径在测试里够不着 —— 测试里退循环靠 qapp.quit()，它不走
+    on_stop/on_quit。与 dispatch_status 同理。
+    """
+    save_settings(with_language(caption.current_settings(),
+                                launcher.selected_language()))
+
+
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(sys.argv[1:] if argv is None else argv)
-    cfg = load_config()
 
     app = QApplication.instance() or QApplication(sys.argv[:1])
     # 关掉最后一个窗口不退出 —— 悬浮窗是可隐藏的，程序活在托盘里
@@ -163,8 +210,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.no_server:
         launcher.set_page_option_enabled(False)
 
-    # 恢复上次的位置；落在已拔掉的显示器上就居中回来
-    caption.apply_settings(restore_position(load_settings(), _screens()))
+    # 恢复上次的位置与语言；窗口落在已拔掉的显示器上就居中回来
+    settings = load_settings()
+    caption.apply_settings(restore_position(settings, _screens()))
+    launcher.set_language(settings.language)
 
     # 网页是可选的。要在没开网页时也能原样跑，publish 得有个空实现。
     # 复选框只在「开始」时被读一次（on_start 里的 should_start_page_server）：
@@ -180,26 +229,7 @@ def main(argv: list[str] | None = None) -> int:
         publish(event)
 
     def persist() -> None:
-        save_settings(caption.current_settings())
-
-    def on_status(data: dict) -> None:
-        state = data.get("state")
-        if state == "loading":
-            launcher.set_status(data.get("message", "正在加载模型…"))
-        elif state == "running":
-            if data.get("model"):
-                launcher.set_status(
-                    f"运行中 · {data['model']} · {data['device']}")
-            else:
-                launcher.set_status(
-                    f"运行中 · 按进程捕获（PID {data.get('pid')}）")
-        elif state == "warning":
-            launcher.set_status(data.get("message", ""))
-        elif state == "degraded":
-            # 原文照搬并标红 —— 降级意味着声音隔离已经失效（原规格 §5.1）
-            launcher.set_status(data.get("message", ""), degraded=True)
-        elif state == "stopped":
-            launcher.set_status("已停止")
+        persist_settings(caption, launcher)
 
     def on_finished() -> None:
         launcher.set_capturing(False)
@@ -208,15 +238,11 @@ def main(argv: list[str] | None = None) -> int:
         # 规格 §5.6：停止后把两个窗口反过来 —— 置顶窗留着会让人以为还在捕获
         caption.hide()
 
-    relay.status.connect(on_status)
+    relay.status.connect(
+        lambda data: dispatch_status(data, launcher=launcher, caption=caption))
     relay.cue.connect(caption.add_cue)
     relay.error.connect(lambda m: launcher.set_status(m, degraded=True))
     controller.finished.connect(on_finished)
-
-    # 这条提示必须放在 connect 之后：Qt 的信号在没有槽连着时发出去就是丢弃，
-    # 放在窗口创建那儿会静默消失（终端版会打印它，GUI 版不能反而更安静）。
-    if (notice := keyless_notice(cfg.translate)):
-        relay.error.emit(notice)
 
     def on_start(proc) -> None:
         nonlocal publish, server_started
@@ -225,6 +251,15 @@ def main(argv: list[str] | None = None) -> int:
             # 这时不能收窗口、不能把按钮切成「停止」—— 什么都还没开始跑。
             relay.error.emit("上一次的捕获还没停下来，请退出程序后重开")
             return
+        # 语言在启动器里随时可能被改，所以这里现算，不能用启动时那份。
+        # C38 的强制点在 --language 的 argparse choices 与下拉由 LANGUAGES 生成处；
+        # gui.json 里被手改的未知值在 settings-load 边界被 coerce 回默认（Task 9），
+        # 且这份语言在按「开始」前就显示在下拉里 —— 不会静默用别的语言去听。
+        session_cfg = load_config(launcher.selected_language())
+        # 没配 key 的提示必须用会话自己这份 cfg：文案点名的语言是这次真正会跑的
+        # 语言，而不是启动时保存/默认的 en —— 用户可能改了下拉再开始。
+        if (notice := keyless_notice(session_cfg.translate)):
+            relay.error.emit(notice)
         if should_start_page_server(no_server=args.no_server,
                                     enabled=launcher.open_page_enabled(),
                                     started=server_started):
@@ -240,7 +275,7 @@ def main(argv: list[str] | None = None) -> int:
         launcher.hide()
         caption.show()
         caption.raise_()
-        controller.start(proc, cfg=cfg, emit=emit)
+        controller.start(proc, cfg=session_cfg, emit=emit)
 
     def on_stop() -> None:
         controller.stop_and_wait()

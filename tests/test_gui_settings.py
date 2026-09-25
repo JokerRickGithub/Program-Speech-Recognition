@@ -123,3 +123,54 @@ def test_no_screens_at_all_leaves_the_position_unset():
     got = restore_position(GuiSettings(x=1, y=2), [])
 
     assert got.x is None and got.y is None
+
+
+def test_language_defaults_to_english():
+    from chrometrans.config import DEFAULT_LANGUAGE
+    from chrometrans.gui.settings import GuiSettings
+
+    assert GuiSettings().language == DEFAULT_LANGUAGE
+
+
+def test_language_round_trips(tmp_path):
+    from chrometrans.gui.settings import GuiSettings, load, save
+
+    p = tmp_path / "gui.json"
+    save(GuiSettings(language="ru"), p)
+
+    assert load(p).language == "ru"
+
+
+def test_unknown_language_falls_back_alone(tmp_path):
+    """C38 的持久化面：坏 language 只连累自己 —— 沿用「坏字段不牵连好字段」
+    的既有策略，别让一个手改坏的配置文件把窗口位置也搭进去。"""
+    from chrometrans.config import DEFAULT_LANGUAGE
+    from chrometrans.gui.settings import load
+
+    p = tmp_path / "gui.json"
+    p.write_text(json.dumps({"language": "klingon", "width": 1234}),
+                 encoding="utf-8")
+
+    got = load(p)
+    assert got.language == DEFAULT_LANGUAGE
+    assert got.width == 1234, "好字段要留下来"
+
+
+def test_non_string_language_falls_back(tmp_path):
+    from chrometrans.config import DEFAULT_LANGUAGE
+    from chrometrans.gui.settings import load
+
+    p = tmp_path / "gui.json"
+    p.write_text(json.dumps({"language": 123}), encoding="utf-8")
+
+    assert load(p).language == DEFAULT_LANGUAGE
+
+
+def test_with_language_overrides_only_the_language():
+    """「存了不读」和「读了不存」是最容易漏的两件事，所以这一步单独可测。"""
+    from chrometrans.gui.settings import GuiSettings, with_language
+
+    s = GuiSettings(x=10, y=20, width=640, font_px=30)
+
+    assert with_language(s, "zh") == GuiSettings(x=10, y=20, width=640,
+                                                 font_px=30, language="zh")

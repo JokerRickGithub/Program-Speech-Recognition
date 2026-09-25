@@ -92,3 +92,96 @@ def test_resolve_pid_defaults_to_none_so_cli_behaviour_is_unchanged(monkeypatch)
     next(gen)
 
     assert FakeSource.last["resolve_pid"] is None
+
+
+def test_with_session_mode_stamps_bilingual_true_and_false():
+    """bilingual 的取值来自 config，不能硬编码 True —— 两个方向都要锁住。"""
+    from chrometrans.config import Config, TranslateConfig
+    from chrometrans.pipeline import _with_session_mode
+
+    got = []
+    _with_session_mode(got.append, Config())(
+        {"event": "status", "data": {"state": "running", "pid": 7}})
+    assert got[-1]["data"]["bilingual"] is True
+
+    got = []
+    _with_session_mode(got.append, Config(translate=TranslateConfig(src=None)))(
+        {"event": "status", "data": {"state": "running", "pid": 7}})
+    assert got[-1]["data"]["bilingual"] is False
+
+
+def test_with_session_mode_keeps_an_existing_bilingual():
+    """已经带 bilingual 的事件不动 —— 包装只填空缺，不充当权威（引擎那条优先）。"""
+    from chrometrans.config import Config
+    from chrometrans.pipeline import _with_session_mode
+
+    got = []
+    _with_session_mode(got.append, Config())(
+        {"event": "status", "data": {"state": "running", "pid": 7,
+                                     "bilingual": False}})
+    assert got[-1]["data"]["bilingual"] is False
+
+
+def test_with_session_mode_passes_non_running_statuses_through():
+    """非 running 的 status（warning）原样通过，同一对象。"""
+    from chrometrans.config import Config
+    from chrometrans.pipeline import _with_session_mode
+
+    event = {"event": "status", "data": {"state": "warning", "message": "x"}}
+    got = []
+    _with_session_mode(got.append, Config())(event)
+    assert got == [event]
+    assert got[-1] is event
+
+
+def test_with_session_mode_passes_non_status_events_through():
+    """非 status 的事件（cue）原样通过，同一对象。"""
+    from chrometrans.config import Config
+    from chrometrans.pipeline import _with_session_mode
+
+    event = {"event": "cue", "data": {"id": 1}}
+    got = []
+    _with_session_mode(got.append, Config())(event)
+    assert got == [event]
+    assert got[-1] is event
+
+
+def test_with_session_mode_does_not_mutate_the_callers_dict():
+    """调用方的 dict 不能被就地改 —— 源的 dict 也被别处观察（spooky action）。"""
+    from chrometrans.config import Config
+    from chrometrans.pipeline import _with_session_mode
+
+    event = {"event": "status", "data": {"state": "running", "pid": 7}}
+    _with_session_mode(lambda e: None, Config())(event)
+    assert event == {"event": "status", "data": {"state": "running", "pid": 7}}
+    assert "bilingual" not in event["data"]
+
+
+def test_segment_source_wires_the_mode_stamping_emit(monkeypatch):
+    """C44 的入口：segment_source 交给 CaptureSource 的 emit 必须带会话模式。"""
+    import chrometrans.pipeline as pipeline
+    from chrometrans.config import Config, TranslateConfig
+
+    received = {}
+
+    class RecordingSource:
+        def __init__(self, cfg, emit, resolve_pid=None):
+            received["emit"] = emit
+
+        def chunks(self):
+            return iter(())
+
+        def stop(self):
+            pass
+
+    monkeypatch.setattr(pipeline, "CaptureSource", RecordingSource)
+    monkeypatch.setattr(pipeline, "Segmenter", FakeSegmenter)
+
+    out = []
+    gen = pipeline.segment_source(
+        Config(translate=TranslateConfig(src=None)),
+        out.append, ("chrome.exe",))()
+    next(gen)
+
+    received["emit"]({"event": "status", "data": {"state": "running", "pid": 3}})
+    assert out[-1]["data"]["bilingual"] is False

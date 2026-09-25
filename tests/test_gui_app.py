@@ -268,3 +268,250 @@ def test_startup_path_runs_to_completion(qapp, tmp_path, monkeypatch):
         assert gui_app.main([]) == 0
     finally:
         timer.stop()
+
+
+def test_dropped_status_reaches_the_caption_window(qapp):
+    """C45 的最后一公里：事件产生在 engine 里，而用户看的是字幕窗。
+
+    断在这一行，前面所有用例照样全绿，而用户什么也看不到。
+    """
+    from chrometrans.gui.app import dispatch_status
+    from chrometrans.gui.caption_window import CaptionWindow
+    from chrometrans.gui.launcher import LauncherWindow
+
+    caption = CaptionWindow()
+    launcher = LauncherWindow()
+
+    dispatch_status({"state": "dropped", "message": "丢弃疑似幻觉：谢谢观看"},
+                    launcher=launcher, caption=caption)
+
+    assert "丢弃疑似幻觉：谢谢观看" in caption.toPlainText()
+    assert "丢弃疑似幻觉：谢谢观看" in launcher.status_text()
+    caption.close()
+    launcher.close()
+
+
+def test_ordinary_statuses_still_reach_the_launcher(qapp):
+    """回归：提到模块级不能把原有那五个状态接丢。"""
+    from chrometrans.gui.app import dispatch_status
+    from chrometrans.gui.caption_window import CaptionWindow
+    from chrometrans.gui.launcher import LauncherWindow
+
+    caption = CaptionWindow()
+    launcher = LauncherWindow()
+
+    dispatch_status({"state": "loading", "message": "正在载入"},
+                    launcher=launcher, caption=caption)
+    assert launcher.status_text() == "正在载入"
+
+    dispatch_status({"state": "running", "model": "large-v3-turbo",
+                     "device": "cuda"}, launcher=launcher, caption=caption)
+    assert launcher.status_text() == "运行中 · large-v3-turbo · cuda"
+
+    dispatch_status({"state": "warning", "message": "内存告急"},
+                    launcher=launcher, caption=caption)
+    assert launcher.status_text() == "内存告急"
+
+    dispatch_status({"state": "degraded", "message": "降级了"},
+                    launcher=launcher, caption=caption)
+    assert launcher.status_text() == "降级了"
+
+    dispatch_status({"state": "stopped"}, launcher=launcher, caption=caption)
+    assert launcher.status_text() == "已停止"
+
+    caption.close()
+    launcher.close()
+
+
+def test_gui_running_line_locks_the_session_mode_suffix(qapp):
+    """C43：bilingual 派生出的后缀 —— 锁定 GUI 的整行。
+
+    断言整行相等而非子串 —— 中间点、空格、字符错一个都是 C43 违约，
+    子串检查根本发现不了。CLI 的等价整行锁在 tests/test_cli.py 的
+    test_running_line_reports_the_session_mode，网页的锁在
+    tests/test_static_index.py 的 test_the_running_line_reports_the_session_mode；
+    此处只锁 GUI 这一行。
+    """
+    from chrometrans.gui.app import dispatch_status
+    from chrometrans.gui.caption_window import CaptionWindow
+    from chrometrans.gui.launcher import LauncherWindow
+
+    caption = CaptionWindow()
+    launcher = LauncherWindow()
+
+    dispatch_status({"state": "running", "model": "large-v3-turbo",
+                     "device": "cuda", "bilingual": True},
+                    launcher=launcher, caption=caption)
+    assert launcher.status_text() == "运行中 · large-v3-turbo · cuda · 翻译中"
+
+    dispatch_status({"state": "running", "model": "large-v3-turbo",
+                     "device": "cuda", "bilingual": False},
+                    launcher=launcher, caption=caption)
+    assert launcher.status_text() == "运行中 · large-v3-turbo · cuda · 不翻译"
+
+    dispatch_status({"state": "running", "model": "large-v3-turbo",
+                     "device": "cuda"},
+                    launcher=launcher, caption=caption)
+    assert launcher.status_text() == "运行中 · large-v3-turbo · cuda"
+
+    dispatch_status({"state": "running", "pid": 123, "bilingual": False},
+                    launcher=launcher, caption=caption)
+    assert launcher.status_text() == "运行中 · 按进程捕获（PID 123） · 不翻译"
+
+    caption.close()
+    launcher.close()
+
+
+def test_startup_restores_the_saved_language(qapp, tmp_path, monkeypatch):
+    """持久化的语言要真的回到下拉里 —— 存了不读等于没存。
+
+    照 test_startup_path_runs_to_completion 的写法驱动整条启动路径（同一个
+    settings_path 补丁、同一个「用重复定时器退循环」的退出口）。
+    """
+    import json
+
+    from PySide6.QtCore import QTimer
+    from chrometrans.gui import app as gui_app
+    from chrometrans.gui import settings as gui_settings
+    from chrometrans.gui.launcher import LauncherWindow
+
+    path = tmp_path / "gui.json"
+    path.write_text(json.dumps({"language": "zh"}), encoding="utf-8")
+    monkeypatch.setattr(gui_settings, "settings_path", lambda: path)
+
+    # 只验「main 把存下来的语言交给了下拉」，所以把 set_language 换成探针；
+    # 下拉本身选不选得中由 test_gui_launcher.py 那几条管。
+    seen = {}
+    monkeypatch.setattr(LauncherWindow, "set_language",
+                        lambda self, code: seen.update(code=code))
+
+    timer = QTimer()
+    timer.setInterval(50)
+    timer.timeout.connect(qapp.quit)
+    timer.start()
+    try:
+        assert gui_app.main([]) == 0
+    finally:
+        timer.stop()
+
+    assert seen.get("code") == "zh", "启动时必须把存下来的语言放回下拉"
+
+
+def test_persist_settings_writes_the_selected_language(monkeypatch, tmp_path):
+    """「存」的那一端 —— 「读」的那端由 test_startup_restores_the_saved_language 管。
+
+    两端分开测，因为整条路径在测试里跑不到 persist()：退循环靠 qapp.quit()，
+    而 quit 不走 on_stop/on_quit。
+    """
+    import json
+
+    from chrometrans.gui import app as gui_app
+    from chrometrans.gui import settings as gui_settings
+    from chrometrans.gui.settings import GuiSettings
+
+    path = tmp_path / "gui.json"
+    monkeypatch.setattr(gui_settings, "settings_path", lambda: path)
+
+    class FakeCaption:
+        def current_settings(self):
+            return GuiSettings(width=1234)
+
+    class FakeLauncher:
+        def selected_language(self):
+            return "zh"
+
+    gui_app.persist_settings(FakeCaption(), FakeLauncher())
+
+    assert json.loads(path.read_text(encoding="utf-8"))["language"] == "zh"
+
+
+@pytest.mark.parametrize("language, expect_notice", [
+    ("zh", False),
+    ("ru", True),
+])
+def test_keyless_notice_uses_the_session_language(qapp, tmp_path, monkeypatch,
+                                                 language, expect_notice):
+    """没配 key 的提示必须用会话自己那份 cfg，而不是启动时保存/默认的 en。
+
+    单语会话（zh）不该提醒（C44），双语会话（ru）要提醒（C17）。这里驱动整条
+    on_start 路径：让启动器在事件循环转起来后自动发 start_requested，并把
+    CaptureController 换成不真造 engine 的假件，只记下它拿到的 cfg。
+    """
+    # 本测试的前提是「没配 key 的机器」（C17 那句提醒）。环境里若真设了
+    # AZURE_TRANSLATOR_KEY / GOOGLE_TRANSLATE_KEY，ru 臂会红、zh 臂会空转，
+    # 所以显式清掉 —— 别删这两行。
+    monkeypatch.delenv("AZURE_TRANSLATOR_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_TRANSLATE_KEY", raising=False)
+
+    import json
+
+    from PySide6.QtCore import QTimer
+    from chrometrans.gui import app as gui_app
+    from chrometrans.gui import settings as gui_settings
+    from chrometrans.gui.launcher import LauncherWindow
+    from chrometrans.gui.processes import AudioProcess
+
+    path = tmp_path / "gui.json"
+    path.write_text(json.dumps({"language": language}), encoding="utf-8")
+    monkeypatch.setattr(gui_settings, "settings_path", lambda: path)
+
+    seen = {}
+
+    class _Signal:
+        def __init__(self):
+            self._slots = []
+
+        def connect(self, slot):
+            self._slots.append(slot)
+
+        def emit(self, *args):
+            for slot in self._slots:
+                slot(*args)
+
+    class FakeRelay:
+        def __init__(self):
+            self.status = _Signal()
+            self.cue = _Signal()
+            self.error = _Signal()
+            self.error.connect(
+                lambda m: seen.setdefault("errors", []).append(m))
+
+        def emit_event(self, event):
+            pass
+
+    class FakeController:
+        def __init__(self, relay, engine_factory=None, parent=None):
+            self.finished = _Signal()
+
+        def running(self):
+            return False
+
+        def start(self, proc, cfg=None, emit=None):
+            seen["session_src"] = cfg.translate.src
+
+    class AutoStartLauncher(LauncherWindow):
+        def __init__(self, *a, **k):
+            super().__init__(*a, **k)
+            # 等事件循环转起来再发：那时 main 已把 start_requested 接上 on_start。
+            QTimer.singleShot(0, self._emit_start)
+
+        def _emit_start(self):
+            self.start_requested.emit(AudioProcess(4321, "chrome.exe"))
+
+    monkeypatch.setattr(gui_app, "EventRelay", FakeRelay)
+    monkeypatch.setattr(gui_app, "CaptureController", FakeController)
+    monkeypatch.setattr(gui_app, "LauncherWindow", AutoStartLauncher)
+
+    timer = QTimer()
+    timer.setInterval(50)
+    timer.timeout.connect(qapp.quit)
+    timer.start()
+    try:
+        assert gui_app.main([]) == 0
+    finally:
+        timer.stop()
+
+    # 会话确以保存/选中的语言在跑（zh 的 translate.src 是 None）
+    assert seen.get("session_src") is (None if language == "zh" else language)
+    notices = [m for m in seen.get("errors", []) if "没有配置翻译 key" in m]
+    assert bool(notices) is expect_notice
