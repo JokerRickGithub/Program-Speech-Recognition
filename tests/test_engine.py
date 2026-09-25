@@ -66,7 +66,12 @@ def test_emits_cue_and_writes_all_three_artifacts(tmp_path):
 
 
 def test_translation_failure_keeps_source(tmp_path):
-    """spec §6：翻译整链失败时 target 置 null，原文照常保存。"""
+    """spec §6：翻译整链失败时 target 置 null，原文照常保存。
+
+    「保留原文」是行为，报不报是另一回事：用户报的「英语课很多话直接没有翻译」
+    （2026-09-25）在此之前终端上一个字都没有 —— 有没有译文看得见，为什么没有
+    看不见。所以这里连带断言原因也在事件里。
+    """
     segs = [Segment(1, 0.0, 2.0, np.zeros(32000, dtype=np.float32))]
     eng, events = _engine(tmp_path, StubTranslator(fail=True), segs)
 
@@ -75,7 +80,11 @@ def test_translation_failure_keeps_source(tmp_path):
     cue = [e for e in events if e["event"] == "cue"][0]["data"]
     assert cue["target"] is None
     assert cue["source"] == "hello world"
-    assert any(e["event"] == "error" for e in events)
+
+    errors = [e["data"]["message"] for e in events if e["event"] == "error"]
+    assert errors, "翻译失败必须报出来"
+    assert any("翻译失败" in m for m in errors)
+    assert any("boom" in m for m in errors), "要带上原因，否则用户不知道该查什么"
 
 
 def test_asr_failure_does_not_stop_pipeline(tmp_path):

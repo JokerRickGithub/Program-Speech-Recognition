@@ -63,10 +63,14 @@ function addNotice(text) {
   appendToLog(el);
 }
 
-// 状态事件里只有 dropped 是「事件」而不是「当前状态」——它描述的是刚发生的一件
-// 事，塞进页眉只会被下一条状态顶走。所以它走 addNotice（C45）。
+// 状态事件里 dropped 与 audio_dropped 是「事件」而不是「当前状态」——它们描述的是
+// 刚发生的一件事，塞进页眉只会被下一条状态顶走。所以它们走 addNotice（C45）。
+// audio_dropped 是排空缓冲溢出丢掉的音频（消费者跟不上），与丢弃幻觉同属
+// 「有东西没按预期走」，文案由发出方给全。
 function onStatus(data) {
-  if (data.state === 'dropped') return addNotice(data.message);
+  if (data.state === 'dropped' || data.state === 'audio_dropped') {
+    return addNotice(data.message);
+  }
   return setStatus(data);
 }
 

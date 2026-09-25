@@ -1,3 +1,5 @@
+import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
@@ -304,3 +306,211 @@ def test_loopback_read_normalizes_converter_failure_to_capture_error():
             s.read()
     finally:
         s._pool.shutdown(wait=False)
+
+
+# ---- 排空层：消费者卡住时不得把音频憋在管道里（2026-09-25 实测的丢音频根因）----
+
+
+class PacedStream:
+    """按自己的节奏产块的假流，并记下底层被读了多少次。"""
+
+    def __init__(self, delay=0.002, samples=160):
+        self.reads = 0
+        self._delay = delay
+        self._samples = samples
+        self.stopped = False
+
+    def start(self):
+        pass
+
+    def read(self):
+        self.reads += 1
+        time.sleep(self._delay)
+        return np.full(self._samples, 0.05, dtype=np.float32)
+
+    def stop(self):
+        self.stopped = True
+
+
+def test_a_stalled_consumer_leaves_the_pipe_drained():
+    """回归：消费者卡住时底层流必须仍在被读，否则管道填满就丢音频。
+
+    整条链是拉取式的单线程生成器（engine.run → Segmenter → chunks →
+    stream.read）。翻译卡顿实测 40 次里 16 次超过 1 秒、最坏 17.16 秒，而命名
+    管道缓冲 1 MB 只装得下 16 kHz×float32 的 16.4 秒音频 —— 越过这条线 DLL 只能
+    丢样本，「翻译慢」于是升级成「整句话没了」。
+    """
+    stream = PacedStream()
+    source = _source(CaptureConfig(self_check_chunks=1), [],
+                     open_process_stream=lambda pid: stream)
+    it = source.chunks()
+    next(it)                      # 自检窗口，先拿到第一块
+    before = stream.reads
+
+    time.sleep(0.3)               # 模拟翻译卡住
+    during_stall = stream.reads - before
+    source.stop()
+    it.close()
+
+    assert during_stall > 20, (
+        f"消费者卡住的 0.3 秒里底层只被读了 {during_stall} 次 —— 管道没人在排空")
+
+
+def test_buffer_overflow_drops_the_oldest_and_reports_it():
+    """缓冲必须有界，溢出时丢最旧的并**说出来**。
+
+    丢最旧是为了让用户跟得上「现在」这节课；而丢这件事必须可见 —— 与 C45 要求
+    丢弃幻觉可见同一个取向：静默少掉几句字幕，事后无从查起。
+    """
+    events = []
+
+    class Firehose:
+        def __init__(self):
+            self.n = 0
+
+        def start(self):
+            pass
+
+        def read(self):
+            self.n += 1
+            return np.full(160, float(self.n), dtype=np.float32)
+
+        def stop(self):
+            pass
+
+    fire = Firehose()
+    # 容量 0.1 秒 = 1600 样本 = 10 块，而生产者随手就能产几百块
+    source = _source(CaptureConfig(self_check_chunks=1,
+                                   drain_buffer_seconds=0.1), events,
+                     open_process_stream=lambda pid: fire)
+    it = source.chunks()
+    next(it)
+    time.sleep(0.2)
+    next(it)                      # 恢复消费：此刻才报出溢出
+
+    assert fire.n > 10, "生产必须超过容量，否则这条测试没测到溢出"
+    lost = [e for e in events if e["data"].get("state") == "audio_dropped"]
+    assert lost, "丢音频必须发 status 事件"
+    assert "丢弃" in lost[0]["data"]["message"]
+
+    source.stop()
+    it.close()
+
+
+def test_stop_unblocks_a_consumer_waiting_on_a_starved_stream():
+    """静音期底层不产数据时，停止必须立刻生效。
+
+    这就是实测的「停止挂起」：消费者等在阻塞读里，Ctrl+C 之后没有任何东西去
+    打断那次读，进程只能干等下一次读到东西。而且停止不是断流 —— 不许报成
+    「捕获流中断，正在重连」。
+    """
+    gate = threading.Event()
+    events = []
+
+    class Starved:
+        def __init__(self):
+            self.n = 0
+
+        def start(self):
+            pass
+
+        def read(self):
+            self.n += 1
+            if self.n == 1:
+                return np.full(160, 0.05, dtype=np.float32)
+            gate.wait(10)         # 一直没数据
+            return np.zeros(160, dtype=np.float32)
+
+        def stop(self):
+            gate.set()            # 等价于 CancelIoEx：把阻塞中的读放掉
+
+    source = _source(CaptureConfig(self_check_chunks=1), events,
+                     open_process_stream=lambda pid: Starved())
+    done = threading.Event()
+
+    def consume():
+        for _ in source.chunks():
+            pass
+        done.set()
+
+    threading.Thread(target=consume, daemon=True).start()
+    time.sleep(0.2)
+    assert not done.is_set(), "前提：消费者此刻正卡在阻塞读里"
+
+    source.stop()
+    assert done.wait(3.0), "stop() 之后消费者必须马上退出"
+    assert not [e for e in events if e["event"] == "error"], \
+        "用户主动停止不该报成捕获失败"
+
+
+def test_a_clean_stop_does_not_back_off():
+    """正常停止不是断流：不该为它睡退避。
+
+    旧行为是停止后仍走一次 _maybe_degrade()：failures=0 时它算出的 1 秒退避
+    照睡不误 —— Ctrl+C 之后进程还要多赖一秒。
+    """
+    delays = []
+    source = _source(CaptureConfig(self_check_chunks=1), [],
+                     open_process_stream=lambda pid: FakeStream(
+                         chunks=[np.full(512, 0.05, dtype=np.float32)]),
+                     sleep=delays.append)
+    _take(source, 2)
+
+    assert delays == [], f"正常停止不该退避，实际睡了 {delays}"
+
+
+def test_loopback_path_drains_too():
+    """降级路径同样要排空 —— 它照样是拉取式的，消费者卡住一样丢音频。"""
+
+    def no_process():
+        raise CaptureError("没有进程在渲染音频")
+
+    loop = PacedStream()
+    source = _source(CaptureConfig(self_check_chunks=1), [],
+                     resolve_pid=no_process,
+                     open_loopback=lambda: loop,
+                     open_process_stream=lambda pid: FakeStream())
+    it = source.chunks()
+    next(it)
+    before = loop.reads
+
+    time.sleep(0.3)
+    during_stall = loop.reads - before
+    source.stop()
+    it.close()
+
+    assert during_stall > 20, (
+        f"降级路径在消费者卡住的 0.3 秒里只被读了 {during_stall} 次")
+
+
+def test_stop_reaches_the_underlying_stream_exactly_once():
+    """两条停止路径（CaptureSource.stop() 与生成器的 finally）撞在一起时，
+    底层只能被停一次。
+
+    底层 stop() 最终落到 `CloseHandle`：同一句柄被关两次，若中间它刚被系统
+    复用，关掉的就是别人的对象 —— 概率极低，代价极高。所以这里锁的是「一次」，
+    不是「碰巧没事」。
+    """
+    stops = []
+
+    class Counted:
+        def start(self):
+            pass
+
+        def read(self):
+            time.sleep(0.002)
+            return np.full(160, 0.05, dtype=np.float32)
+
+        def stop(self):
+            stops.append(1)
+
+    source = _source(CaptureConfig(self_check_chunks=1), [],
+                     open_process_stream=lambda pid: Counted())
+    it = source.chunks()
+    next(it)
+
+    source.stop()        # 用户停的
+    source.stop()        # 幂等：重复调用也不该再往下传
+    it.close()           # 生成器 finally 里还会再停一次
+
+    assert stops == [1], f"底层被停了 {len(stops)} 次，必须恰好一次"

@@ -174,9 +174,12 @@ def dispatch_status(data: dict, *, launcher, caption) -> None:
     elif state == "degraded":
         # 原文照搬并标红 —— 降级意味着声音隔离已经失效（原规格 §5.1）
         launcher.set_status(data.get("message", ""), degraded=True)
-    elif state == "dropped":
+    elif state in ("dropped", "audio_dropped"):
         # C45：这张窗口是捕获期间唯一看得见的东西（启动器在 on_start 里已
         # hide），所以提示要落在这里，而不是只写进启动器那个看不见的状态行。
+        # audio_dropped（排空缓冲溢出丢掉音频）与丢弃幻觉同属「有东西没按预期
+        # 走」，走同一条路 —— 没有分支的话 PySide 这边会把它整个丢掉，而 CLI 与
+        # 网页都看得见，只有最该看见它的那个界面看不见。
         message = data.get("message", "")
         caption.add_notice(message)
         launcher.set_status(message)

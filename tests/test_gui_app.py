@@ -291,6 +291,29 @@ def test_dropped_status_reaches_the_caption_window(qapp):
     launcher.close()
 
 
+def test_dropped_audio_status_reaches_the_caption_window(qapp):
+    """排空缓冲溢出丢音频同样要走最后一公里。
+
+    这条尤其要紧：丢音频发生在「机器跟不上」的时候，而那正是用户最需要知道
+    「为什么字幕少了」的时候 —— 桌面端是上课时唯一开着的界面。
+    """
+    from chrometrans.gui.app import dispatch_status
+    from chrometrans.gui.caption_window import CaptionWindow
+    from chrometrans.gui.launcher import LauncherWindow
+
+    caption = CaptionWindow()
+    launcher = LauncherWindow()
+
+    dispatch_status({"state": "audio_dropped",
+                     "message": "处理跟不上，已丢弃约 3.2 秒音频（这几句字幕会缺）"},
+                    launcher=launcher, caption=caption)
+
+    assert "已丢弃约 3.2 秒音频" in caption.toPlainText()
+    assert "已丢弃约 3.2 秒音频" in launcher.status_text()
+    caption.close()
+    launcher.close()
+
+
 def test_ordinary_statuses_still_reach_the_launcher(qapp):
     """回归：提到模块级不能把原有那五个状态接丢。"""
     from chrometrans.gui.app import dispatch_status
@@ -437,11 +460,11 @@ def test_keyless_notice_uses_the_session_language(qapp, tmp_path, monkeypatch,
     on_start 路径：让启动器在事件循环转起来后自动发 start_requested，并把
     CaptureController 换成不真造 engine 的假件，只记下它拿到的 cfg。
     """
-    # 本测试的前提是「没配 key 的机器」（C17 那句提醒）。环境里若真设了
-    # AZURE_TRANSLATOR_KEY / GOOGLE_TRANSLATE_KEY，ru 臂会红、zh 臂会空转，
-    # 所以显式清掉 —— 别删这两行。
+    # 本测试的前提是「没配 key 的机器」（C17 那句提醒）。环境里若真设了这几个，
+    # ru 臂会红、zh 臂会空转，所以显式清掉 —— 别删这几行。
     monkeypatch.delenv("AZURE_TRANSLATOR_KEY", raising=False)
     monkeypatch.delenv("GOOGLE_TRANSLATE_KEY", raising=False)
+    monkeypatch.delenv("YANDEX_TRANSLATE_KEY", raising=False)
 
     import json
 

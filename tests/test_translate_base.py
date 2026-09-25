@@ -7,6 +7,7 @@ from chrometrans.translate.base import (
     ChainTranslator,
     TransientTranslationError,
     TranslationError,
+    describe_transport_error,
     retry_transient,
 )
 
@@ -65,12 +66,57 @@ def test_transient_error_is_retried_not_downgraded():
     assert b.calls == 0, "瞬时错误耗尽重试前不得降级"
 
 
-def test_chain_returns_none_per_item_when_all_fail():
+def test_chain_raises_when_every_provider_fails():
+    """全军覆没必须抛，且要说清是谁、为什么。
+
+    旧行为是返回 [None, None] —— 于是「翻译挂了」与「本句无需翻译」在返回值上
+    长得一模一样，而唯一知道原因的这一层把原因丢了。用户报的「英语课很多话直接
+    没有翻译」，在终端上就是一个字都没有（2026-09-25）。
+
+    抛异常的代价只是通知方式变了：engine 照旧把该 cue 的译文存 None、原文照常
+    落盘，用户看到的东西和从前一样，只是这回它会说一声。
+    """
     def boom(texts):
         raise TranslationError("nope")
 
-    chain = ChainTranslator([StubTranslator("a", boom)], TranslateConfig())
-    assert run(chain.translate(["x", "y"], "en", "zh-Hans")) == [None, None]
+    chain = ChainTranslator([StubTranslator("a", boom),
+                             StubTranslator("b", boom)], TranslateConfig())
+    with pytest.raises(TranslationError) as excinfo:
+        run(chain.translate(["x", "y"], "en", "zh-Hans"))
+
+    message = str(excinfo.value)
+    assert "a" in message and "b" in message, "要指名道姓，否则用户不知道该换哪条"
+    assert "nope" in message, "原因也要带上"
+
+
+def test_chain_raises_when_there_is_no_provider_at_all():
+    """链是空的同样是失败，不能装成「这句不用翻译」。"""
+    chain = ChainTranslator([], TranslateConfig())
+    with pytest.raises(TranslationError):
+        run(chain.translate(["x"], "en", "zh-Hans"))
+
+
+def test_chain_reports_a_mismatched_count_as_a_reason():
+    """条数对不上是「换下一家」而不是「成功」，全都不对时要报出来。"""
+    chain = ChainTranslator(
+        [StubTranslator("a", lambda t: [f"A:{x}" for x in t] + ["多余的"])],
+        TranslateConfig())
+    with pytest.raises(TranslationError) as excinfo:
+        run(chain.translate(["x"], "en", "zh-Hans"))
+    assert "条" in str(excinfo.value)
+
+
+def test_describe_transport_error_handles_an_empty_message():
+    """httpx 的 ConnectError('') 的 str() 是**空串**。
+
+    2026-09-25 的探针里走代理 6 次有 2 次就是这个，于是「翻译失败：」后面什么
+    都没有 —— 报错报了个寂寞。
+    """
+    import httpx
+
+    assert describe_transport_error(httpx.ConnectError("")) == "ConnectError"
+    assert describe_transport_error(
+        httpx.ConnectError("reset by peer")) == "ConnectError: reset by peer"
 
 
 def test_chain_returns_empty_for_empty_input():

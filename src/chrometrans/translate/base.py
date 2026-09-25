@@ -21,6 +21,16 @@ class Translator(Protocol):
     async def translate(self, texts: list[str], src: str, tgt: str) -> list[str]: ...
 
 
+def describe_transport_error(exc: Exception) -> str:
+    """把传输层异常压成一句能读的话。
+
+    httpx 的 `ConnectError('')` 的 str() **是空串** —— 2026-09-25 的探针里，走代理
+    6 次有 2 次就是这个，于是「翻译失败：」后面什么都没有，报错报了个寂寞。
+    """
+    text = str(exc).strip()
+    return f"{type(exc).__name__}: {text}" if text else type(exc).__name__
+
+
 async def retry_transient(fn: Callable[[], Awaitable], max_retries: int = 3,
                           base_delay: float = 0.5):
     """有界重试 + 指数退避。只重试 TransientTranslationError。"""
@@ -40,7 +50,15 @@ async def retry_transient(fn: Callable[[], Awaitable], max_retries: int = 3,
 
 
 class ChainTranslator:
-    """按序尝试各 provider。全部失败时该 cue 的译文为 None，原文照常保存。"""
+    """按序尝试各 provider；**全失败时抛 TranslationError**。
+
+    抛而不是返回 [None] * len(texts)：那个返回值让「翻译挂了」和「本句无需翻译」
+    长得一模一样，而唯一知道原因的这一层把原因吞了 —— 用户报的「英语课很多话直接
+    没有翻译」，在终端上一个字都没有（2026-09-25）。
+
+    调用方（engine）把该 cue 的译文照旧存 None、原文照常落盘，用户看到的东西与
+    从前一样，只是这回它会说一声是哪个通道、为什么失败。
+    """
 
     def __init__(self, providers: list[Translator], cfg: TranslateConfig):
         self._providers = list(providers)
@@ -51,6 +69,7 @@ class ChainTranslator:
         if not texts:
             return []
 
+        reasons: list[str] = []
         for provider in self._providers:
             try:
                 result = await retry_transient(
@@ -58,12 +77,18 @@ class ChainTranslator:
                     max_retries=self._cfg.max_retries,
                     base_delay=self._cfg.retry_base_delay_s,
                 )
-            except Exception:
+            except Exception as exc:
+                reasons.append(f"{provider.name}（{describe_transport_error(exc)}）")
                 continue
 
             if len(result) != len(texts):
-                continue                       # 序号对不上，宁可换引擎也不错位
+                # 序号对不上，宁可换引擎也不错位
+                reasons.append(f"{provider.name}（返回 {len(result)} 条，"
+                               f"请求 {len(texts)} 条）")
+                continue
 
             return list(result)
 
-        return [None] * len(texts)
+        if not reasons:
+            raise TranslationError("没有可用的翻译通道（链里一个 provider 都没有）")
+        raise TranslationError("所有翻译通道都失败了：" + "；".join(reasons))

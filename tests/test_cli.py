@@ -22,10 +22,14 @@ def test_parse_args_rejects_non_loopback_host():
 
 
 def test_only_free_tiers_when_no_keys():
-    """没 key 也必须有能用的兜底：免 key 谷歌排在前，微软 Edge 那条已下线排最后。"""
+    """没 key 也必须有能用的兜底：免 key 谷歌。
+
+    2026-09-25 移除了原来排在最后的免 key 微软层（那条路已 404 下线）—— 留着它
+    等于每次全体失败都先白等一次 404，而失败本来就慢。
+    """
     cfg = TranslateConfig(azure_key=None, google_key=None)
     chain = build_translator_chain(cfg)
-    assert [p.name for p in chain._providers] == ["google-free", "microsoft-free"]
+    assert [p.name for p in chain._providers] == ["google-free"]
 
 
 def test_keyless_notice_fires_exactly_when_there_is_no_key():
@@ -34,13 +38,34 @@ def test_keyless_notice_fires_exactly_when_there_is_no_key():
     assert keyless_notice(TranslateConfig(azure_key="A", google_key=None)) is None
     assert keyless_notice(TranslateConfig(azure_key=None, google_key="G")) is None
     assert keyless_notice(TranslateConfig(azure_key="A", google_key="G")) is None
+    assert keyless_notice(
+        TranslateConfig(azure_key=None, google_key=None, yandex_key="Y")) is None
 
 
 def test_full_chain_when_all_keys_present():
     cfg = TranslateConfig(azure_key="A", google_key="G")
     chain = build_translator_chain(cfg)
     assert [p.name for p in chain._providers] == [
-        "microsoft-azure", "google", "google-free", "microsoft-free"]
+        "microsoft-azure", "google", "google-free"]
+
+
+def test_yandex_is_a_tier_before_the_keyless_fallback():
+    """带 key 的层永远排在免 key 之前 —— 放后面就是每次先白吃一个失败请求。"""
+    cfg = TranslateConfig(azure_key=None, google_key=None,
+                          yandex_key="Y", yandex_folder_id="F")
+    chain = build_translator_chain(cfg)
+    assert [p.name for p in chain._providers] == ["yandex", "google-free"]
+
+
+def test_yandex_needs_only_the_key_not_the_folder():
+    """服务账号的 API key 不需要 folderId（目录由账号本身决定，见 yandex.py）。
+
+    要是把 folder_id 也当成必填，配了 key 却忘了它的人会得到一个静默缺席的通道。
+    """
+    cfg = TranslateConfig(azure_key=None, google_key=None, yandex_key="Y",
+                          yandex_folder_id=None)
+    assert [p.name for p in build_translator_chain(cfg)._providers] == [
+        "yandex", "google-free"]
 
 
 def test_print_event_reports_every_status_transition(capsys):
@@ -134,6 +159,21 @@ def test_main_forwards_the_language_choice(monkeypatch):
 
     assert cli.main(["--no-server", "--language", "ru"]) == 0
     assert seen["language"] == "ru"
+
+
+def test_print_event_reports_dropped_audio(capsys):
+    """排空缓冲溢出丢掉的音频必须报出来。
+
+    与 C45 要求丢弃幻觉可见同一个取向：不报的话用户只看到字幕少了几句，而原因
+    （翻译卡顿 / 机器跟不上）无处可查。终端是唯一不会被下一句字幕顶走的地方。
+    """
+    print_event({"event": "status", "data": {
+        "state": "audio_dropped",
+        "message": "处理跟不上，已丢弃约 3.2 秒音频（这几句字幕会缺）"}})
+
+    err = capsys.readouterr().err
+    assert "丢弃约 3.2 秒音频" in err
+    assert "这几句字幕会缺" in err, "要说清代价，不然用户不知道这意味着什么"
 
 
 def test_print_event_reports_dropped_segments(capsys):

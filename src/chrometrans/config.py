@@ -21,6 +21,11 @@ class CaptureConfig:
     loopback_retry_delay_s: float = 5.0
     loopback_read_timeout_s: float = 2.0   # C1：PortAudio 可能永久阻塞，必须超时
     silence_fill_samples: int = 512   # C1：底层停流时补的静音块大小
+    # 排空缓冲（2026-09-25）。流水线是拉取式的单线程生成器链，翻译卡住时没有
+    # 任何人读管道；而命名管道只有 1 MB ≈ 16.4 秒音频（16 kHz×float32），实测
+    # 翻译最坏卡 17.16 秒 —— 越过这条线就丢音频。给到 60 秒（≈3.84 MB）留足余量。
+    drain_buffer_seconds: float = 60.0
+    drain_join_timeout_s: float = 2.0     # 停止时等排空线程收尾的上限
     # 启动自检（spec §9）：管道块约 10ms，200 块 ≈ 2 秒
     self_check_chunks: int = 200
     self_check_min_rms: float = 1e-4
@@ -163,6 +168,10 @@ class TranslateConfig:
     azure_key: str | None = None
     azure_region: str = "global"
     google_key: str | None = None
+    # Yandex v2：服务账号的 API key 不需要 folder_id（目录由账号本身决定），
+    # 用户账号的 IAM token 才需要。所以这里两个字段都可为空，见 yandex.py
+    yandex_key: str | None = None
+    yandex_folder_id: str | None = None
     timeout_s: float = 10.0
     max_retries: int = 3              # C19：传输错误有界重试
     retry_base_delay_s: float = 0.5
@@ -203,6 +212,8 @@ def load_config(language: str = DEFAULT_LANGUAGE) -> Config:
         azure_key=os.environ.get("AZURE_TRANSLATOR_KEY"),
         azure_region=os.environ.get("AZURE_TRANSLATOR_REGION", "global"),
         google_key=os.environ.get("GOOGLE_TRANSLATE_KEY"),
+        yandex_key=os.environ.get("YANDEX_TRANSLATE_KEY"),
+        yandex_folder_id=os.environ.get("YANDEX_TRANSLATE_FOLDER_ID"),
     )
     asr = AsrConfig(
         language=profile.asr_language,

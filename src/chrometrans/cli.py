@@ -11,6 +11,7 @@ from chrometrans.serving import start_server
 from chrometrans.translate.base import ChainTranslator
 from chrometrans.translate.google import GoogleFreeTranslator, GoogleTranslator
 from chrometrans.translate.microsoft import MicrosoftTranslator
+from chrometrans.translate.yandex import YandexTranslator
 
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
 
@@ -35,12 +36,18 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 
 
 def build_translator_chain(cfg) -> ChainTranslator:
-    """Tier 1 Azure → Tier 2 Google(key) → 免 key 兜底（谷歌 → 微软 Edge）。
+    """Tier 1 Azure → Tier 2 Google(key) → Tier 3 Yandex(key) → 免 key 兜底（谷歌）。
 
     带 key 的层放最前面：放最后只会让每次翻译先白吃一个失败请求。
-    免 key 这两层的实测结论（2026-09-23）不同，所以次序有别：谷歌那条可用，
-    微软 Edge 那条（`edge.microsoft.com/translate/auth`）已 404 下线。死的那层
-    放最后，只有谷歌也失败时才会为它多花一次请求。
+
+    2026-09-25 去掉了原来排在最后的免 key 微软层（`api-edge.cognitive...`，
+    与 `edge.microsoft.com/translate/auth` 同一条已下线的路）。留着它的代价不是
+    「多一次请求」那么轻：每次全体失败都要先等它 404 一次，而失败本身已经慢
+    （实测重试阶梯 6 / 12 / 17 秒），这一层是往用户的卡顿上再加一段。
+
+    Yandex 加在这一层是因为它的可达性与其他几家相反：**直连 6/6 通**（走系统代理
+    反而 4/6），而免 key 谷歌是直连 0/6。上课必须开 VPN 的场景下，多一条不同路由
+    的带 key 通道是有意义的余量（C17 要的正是别把身家押在一条路上）。
 
     ⚠️ 不配 key 时这条链**只剩免 key 层**，也就是 C17 明令禁止的「免 key 端点
     作为单点依赖」—— 谷歌那个端点同样是未公开的，可能像微软 Edge 的 auth 端点
@@ -56,9 +63,11 @@ def build_translator_chain(cfg) -> ChainTranslator:
     if cfg.google_key:
         providers.append(GoogleTranslator(api_key=cfg.google_key,
                                           timeout_s=cfg.timeout_s))
+    if cfg.yandex_key:
+        providers.append(YandexTranslator(api_key=cfg.yandex_key,
+                                          folder_id=cfg.yandex_folder_id,
+                                          timeout_s=cfg.timeout_s))
     providers.append(GoogleFreeTranslator(timeout_s=cfg.timeout_s))
-    providers.append(MicrosoftTranslator(api_key=None, region=cfg.azure_region,
-                                         timeout_s=cfg.timeout_s))
     return ChainTranslator(providers, cfg)
 
 
@@ -69,7 +78,7 @@ def keyless_notice(cfg) -> str | None:
     而那个谷歌端点是未公开的 —— 约束的本意是别让这件事**静默**发生
     （当初就是微软的 auth 端点一夜 404 打断了所有集成）。所以这里把它说出来。
     """
-    if cfg.azure_key or cfg.google_key:
+    if cfg.azure_key or cfg.google_key or cfg.yandex_key:
         return None
     if not cfg.src:
         # 单语会话（translate_src=None）根本不翻译，也就不需要 key。提醒它
@@ -79,7 +88,8 @@ def keyless_notice(cfg) -> str | None:
         return None
     return ("没有配置翻译 key：中文将由免 key 谷歌通道提供。"
             "那是未公开接口，随时可能失效或被限流（C17）。"
-            "想稳定请设 AZURE_TRANSLATOR_KEY 或 GOOGLE_TRANSLATE_KEY。")
+            "想稳定请设 AZURE_TRANSLATOR_KEY 或 GOOGLE_TRANSLATE_KEY，"
+            "或 YANDEX_TRANSLATE_KEY。")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -152,9 +162,11 @@ def print_event(event: dict) -> None:
                   file=sys.stderr)
     elif state == "loading":
         print(f"— {data.get('message')}", file=sys.stderr)
-    elif state in ("degraded", "warning", "dropped"):
-        # dropped 与这两个同类：都是「有东西没按预期走」。C45 要求它可见，
-        # 而终端是唯一不会被下一句字幕顶走的地方 —— 它还有 scrollback。
+    elif state in ("degraded", "warning", "dropped", "audio_dropped"):
+        # dropped / audio_dropped 与这两个同类：都是「有东西没按预期走」。
+        # C45 要求丢弃可见，而终端是唯一不会被下一句字幕顶走的地方 —— 它还有
+        # scrollback。audio_dropped 是排空缓冲溢出丢掉的音频：不报的话用户只
+        # 看到字幕少了几句，原因无处可查。
         print(f"! {data.get('message')}", file=sys.stderr)
     elif state == "stopped":
         print("— 已停止", file=sys.stderr)
