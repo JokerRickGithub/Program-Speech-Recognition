@@ -228,7 +228,8 @@ transcripts/2026-09-23_1430/
   进程**，不是「已打开的程序」—— 网课没在放，Chrome 就不在列表里。这不是 bug：
   按窗口去列会选中 Chrome 的主进程，而它**不放声音**，抓到的会是一路静音。
 - **不要同时开两份**（图形界面和终端版各开一份也不行）。命名管道名是写死的，
-  两份会撞在同一条管道上。
+  两份会撞在同一条管道上。**双击启动尤其容易踩**：没有单实例保护，双击那一下要是
+  没立刻出界面，别接着点第二下 —— 那是在后台又起一份。先看一眼任务栏和托盘。
 - **点「停止」时若目标程序此刻不出声**（比如视频正暂停），界面可能僵住最多 10 秒，
   随后提示「已放弃等待」；引擎要等到它再出一段音频才真正退出，在那之前重新开始会被
   拒绝。这是已知限制，根因在引擎侧（停止信号只在语音段边界被检查）。
@@ -236,7 +237,8 @@ transcripts/2026-09-23_1430/
 ### 使用顺序
 
 1. **先让网课开始播放** —— 目标程序必须在出声
-2. 运行图形界面：`uv run chrometrans-gui`
+2. 打开图形界面 —— 双击桌面上的 `chrometrans` 图标（建法见「装成应用」）；
+   开发时用 `uv run chrometrans-gui`
 3. 在下拉框里选中正在放课的那个程序，形如 `chrome.exe (PID 12345)`
 4. 在「音频语言」下拉里选这门课的语言（`en` / `ru` / `zh`，见「音频语言」）
 5. 点「开始」
@@ -245,6 +247,45 @@ transcripts/2026-09-23_1430/
 
 语言是**按「开始」那一刻现取的**，捕获期间下拉会被禁用；选过的语言会被记住，下次启动
 自动回到它。翻译 key 则相反 —— 环境变量在进程启动时读取，改了要重启图形界面。
+
+### 装成应用（双击启动）
+
+不想每次敲命令，就把它装成桌面上一个图标。要建的是一个**快捷方式**，三个字段各有各的
+道理，填错哪个都会出问题：
+
+| 字段 | 填什么 | 为什么 |
+| --- | --- | --- |
+| 目标 | `<仓库>\.venv\Scripts\pythonw.exe` | 是 `pythonw` 不是 `python` —— 前者没有控制台，双击不会多弹一个黑框 |
+| 参数 | `"<仓库>\launch-gui.pyw"` | 见下 |
+| 起始位置 | `<仓库>` | **别留空。** 实测：留空时子进程沿用**启动它的那个进程**的工作目录（从 `C:\Windows` 启动就得到 `C:\Windows`），快捷方式自己什么都没定住。字幕写进哪个 `transcripts\` 就看这个目录 |
+
+下面这段 PowerShell 直接跑就建好桌面与开始菜单两份（改第一行的路径）：
+
+```powershell
+$repo  = 'E:\self\own\work\ITMO\chrometrans'
+$shell = New-Object -ComObject WScript.Shell
+foreach ($dir in @([Environment]::GetFolderPath('Desktop'),
+                   [Environment]::GetFolderPath('Programs'))) {
+    $s = $shell.CreateShortcut((Join-Path $dir 'chrometrans.lnk'))
+    $s.TargetPath       = Join-Path $repo '.venv\Scripts\pythonw.exe'
+    $s.Arguments        = '"' + (Join-Path $repo 'launch-gui.pyw') + '"'
+    $s.WorkingDirectory = $repo
+    $s.Save()
+}
+```
+
+想换图标，就在循环里 `$s.Save()` **之前**再加一行 `$s.IconLocation = '<某个>.ico'`
+（加在 `Save()` 后面不生效）。不设就是 `pythonw` 的默认图标，不影响使用。
+
+`launch-gui.pyw` 存在的唯一理由是 **pythonw 没有控制台**：启动一旦失败（缺依赖、
+导入报错、Qt 起不来），双击就是「什么都没发生」，一个字都不留。所以它先把
+stdout/stderr 接到日志再启动界面 —— **出问题去看 `%APPDATA%\chrometrans\gui.log`**，
+而不是回到「界面没出来，也不知道为什么」。日志超过 1 MB 时轮转一代（`.log.1`）。
+
+但这份日志只接得住 stdout/stderr，也就是**启动期与模型加载**的输出。「已丢弃约 N 秒
+音频」「翻译失败」走的是界面内部的信号（进字幕窗与启动器状态行），**不会进这个日志**。
+
+不想要了就把那两个 `.lnk` 删掉，仓库里的 `launch-gui.pyw` 留着不影响任何事。
 
 ## 首次运行
 
